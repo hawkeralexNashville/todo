@@ -24,6 +24,11 @@ export default function ReorderPage() {
   const [buckets, setBuckets] = useState([])
   const [busy, setBusy] = useState(false)
 
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState('one_off')
+  const [newBucketId, setNewBucketId] = useState(null)
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   )
@@ -100,6 +105,28 @@ export default function ReorderPage() {
     }
   }
 
+  async function addItem(e) {
+    e.preventDefault()
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    try {
+      const res = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: trimmed,
+          type: newType,
+          bucket_id: newBucketId,
+        }),
+      })
+      const data = await res.json()
+      if (data.item) setItems((prev) => (prev ? [...prev, data.item] : [data.item]))
+    } catch {
+      // ignore
+    }
+    setNewName('') // keep the form open to add several quickly
+  }
+
   async function save() {
     if (busy || !items) return
     setBusy(true)
@@ -166,6 +193,73 @@ export default function ReorderPage() {
             </SortableContext>
           </DndContext>
         )}
+
+        {items !== null &&
+          (adding ? (
+            <form onSubmit={addItem} className="mt-3 rounded-xl bg-white p-4 shadow-sm">
+              <input
+                autoFocus
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    setAdding(false)
+                    setNewName('')
+                  }
+                }}
+                placeholder="New item"
+                className="w-full border-0 border-b border-neutral-200 bg-transparent pb-1 text-[16px] font-light text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
+              />
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <BucketChip
+                  active={newBucketId === null}
+                  onClick={() => setNewBucketId(null)}
+                >
+                  No bucket
+                </BucketChip>
+                {buckets.map((b) => (
+                  <BucketChip
+                    key={b.id}
+                    active={newBucketId === b.id}
+                    onClick={() => setNewBucketId(b.id)}
+                  >
+                    {b.name}
+                  </BucketChip>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center justify-between">
+                <TypeToggle type={newType} onChange={setNewType} />
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={!newName.trim()}
+                    className="text-sm text-blue-500 transition hover:text-blue-600 disabled:opacity-30"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdding(false)
+                      setNewName('')
+                    }}
+                    className="text-sm text-neutral-300 transition hover:text-neutral-500"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </form>
+          ) : (
+            <button
+              onClick={() => setAdding(true)}
+              className="mt-3 px-2 text-sm text-neutral-400 transition hover:text-blue-500"
+            >
+              + Add item
+            </button>
+          ))}
       </div>
     </main>
   )
@@ -280,6 +374,23 @@ function TypeOption({ active, onClick, children }) {
         (active
           ? 'bg-white text-neutral-700 shadow-sm'
           : 'text-neutral-400 hover:text-neutral-600')
+      }
+    >
+      {children}
+    </button>
+  )
+}
+
+function BucketChip({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'rounded-full border px-3 py-1 text-sm transition ' +
+        (active
+          ? 'border-blue-400 bg-blue-50 text-blue-600'
+          : 'border-neutral-200 text-neutral-500 hover:border-neutral-300')
       }
     >
       {children}
