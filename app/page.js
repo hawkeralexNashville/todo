@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
+  const [buckets, setBuckets] = useState([])
   const [exiting, setExiting] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -13,10 +14,19 @@ export default function Home() {
   }, [])
 
   async function load() {
-    const res = await fetch('/api/items', { cache: 'no-store' })
-    const data = await res.json()
-    setItems(data.items || [])
+    const [ri, rb] = await Promise.all([
+      fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+    ])
+    setItems(ri.items || [])
+    setBuckets(rb.buckets || [])
   }
+
+  const bucketNameById = useMemo(() => {
+    const m = new Map()
+    for (const b of buckets) m.set(b.id, b.name)
+    return m
+  }, [buckets])
 
   // Today's queue: non-skipped items first (in priority order), then the items
   // skipped today (oldest skip first) so you always cycle back to them.
@@ -115,6 +125,11 @@ export default function Home() {
             <h1 className="max-w-2xl text-4xl font-light leading-tight tracking-tight text-neutral-800 sm:text-5xl">
               {current.name}
             </h1>
+            {bucketNameById.get(current.bucket_id) ? (
+              <p className="mt-3 text-xs uppercase tracking-widest text-neutral-400">
+                {bucketNameById.get(current.bucket_id)}
+              </p>
+            ) : null}
             <div className="mt-10 flex items-center justify-center gap-6">
               <Link
                 href="/add"
