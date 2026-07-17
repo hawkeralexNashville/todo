@@ -26,7 +26,7 @@ const UNCATEGORIZED = 'bucket-none'
 export default function OrganizePage() {
   const [items, setItems] = useState(null)
   const [buckets, setBuckets] = useState([])
-  const [activeId, setActiveId] = useState(null)
+  const [activeDragId, setActiveDragId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newBucketName, setNewBucketName] = useState('')
 
@@ -59,7 +59,7 @@ export default function OrganizePage() {
     return m
   }, [buckets])
 
-  // The queue Home follows, in order.
+  // Right column: the queue Home follows, in order.
   const priorityItems = useMemo(
     () =>
       (items || [])
@@ -68,27 +68,32 @@ export default function OrganizePage() {
     [items],
   )
 
-  // Backlog, grouped by bucket (unordered).
+  // Left column: every active item, grouped by category (nothing is removed
+  // when prioritized — those tiles just turn green).
   const sections = useMemo(() => {
-    const backlog = (items || []).filter((i) => !i.prioritized)
+    const all = items || []
     const list = buckets.map((b) => ({
       key: `bucket-${b.id}`,
       bucketId: b.id,
       name: b.name,
-      items: backlog.filter((i) => i.bucket_id === b.id),
+      items: all.filter((i) => i.bucket_id === b.id),
     }))
     list.push({
       key: UNCATEGORIZED,
       bucketId: null,
       name: 'Uncategorized',
-      items: backlog.filter((i) => i.bucket_id == null),
+      items: all.filter((i) => i.bucket_id == null),
     })
     return list
   }, [buckets, items])
 
-  const activeItem = activeId != null ? itemsById.get(activeId) : null
+  const activeItem = useMemo(() => {
+    if (!activeDragId) return null
+    const id = Number(String(activeDragId).slice(2))
+    return itemsById.get(id) || null
+  }, [activeDragId, itemsById])
 
-  // ---- persistence helpers -------------------------------------------------
+  // ---- persistence ---------------------------------------------------------
 
   function setPriority(newIds) {
     setItems((prev) =>
@@ -117,89 +122,72 @@ export default function OrganizePage() {
 
   // ---- drag ----------------------------------------------------------------
 
+  function priorityIndexOf(overId) {
+    const ids = priorityItems.map((i) => i.id)
+    if (overId === PRIORITY) return ids.length
+    if (typeof overId === 'string' && overId.startsWith('p-'))
+      return ids.indexOf(Number(overId.slice(2)))
+    return -1
+  }
+
   function onDragEnd(event) {
-    setActiveId(null)
+    setActiveDragId(null)
     const { active, over } = event
     if (!over) return
 
-    const id = Number(active.id)
+    const activeStr = String(active.id)
+    const id = Number(activeStr.slice(2))
     const item = itemsById.get(id)
     if (!item) return
 
     const overId = over.id
-    const priorityIds = priorityItems.map((i) => i.id)
+    const ids = priorityItems.map((i) => i.id)
+    const overIsPriority =
+      overId === PRIORITY ||
+      (typeof overId === 'string' && overId.startsWith('p-'))
 
-    // Resolve the drop target.
-    let target
-    if (overId === PRIORITY) target = { kind: 'priority', overItemId: null }
-    else if (overId === UNCATEGORIZED) target = { kind: 'bucket', bucketId: null }
-    else if (typeof overId === 'string' && overId.startsWith('bucket-'))
-      target = { kind: 'bucket', bucketId: Number(overId.slice(7)) }
-    else if (typeof overId === 'number')
-      target = { kind: 'priority', overItemId: overId }
-    else return
-
-    if (target.kind === 'priority') {
-      if (item.prioritized) {
-        const from = priorityIds.indexOf(id)
-        const to =
-          target.overItemId != null
-            ? priorityIds.indexOf(target.overItemId)
-            : priorityIds.length - 1
-        if (from < 0 || to < 0 || from === to) return
-        setPriority(arrayMove(priorityIds, from, to))
-      } else {
-        // Promote from backlog.
-        const insertAt =
-          target.overItemId != null
-            ? priorityIds.indexOf(target.overItemId)
-            : priorityIds.length
-        const newIds = [...priorityIds]
-        newIds.splice(insertAt < 0 ? priorityIds.length : insertAt, 0, id)
-        setPriority(newIds)
+    if (activeStr.startsWith('b-')) {
+      // Dragging a left (backlog) tile.
+      if (overIsPriority) {
+        if (item.prioritized) {
+          // Already queued — reposition it.
+          const from = ids.indexOf(id)
+          let to = priorityIndexOf(overId)
+          if (to < 0) to = ids.length - 1
+          if (from >= 0 && to >= 0 && from !== to) setPriority(arrayMove(ids, from, to))
+        } else {
+          // Pull into the queue.
+          let at = priorityIndexOf(overId)
+          if (at < 0) at = ids.length
+          const newIds = [...ids]
+          newIds.splice(at, 0, id)
+          setPriority(newIds)
+        }
+      } else if (overId === UNCATEGORIZED) {
+        if ((item.bucket_id ?? null) !== null) patchItem(id, { bucket_id: null })
+      } else if (typeof overId === 'string' && overId.startsWith('bucket-')) {
+        const bucketId = Number(overId.slice(7))
+        if ((item.bucket_id ?? null) !== bucketId) patchItem(id, { bucket_id: bucketId })
       }
-      return
+    } else if (activeStr.startsWith('p-')) {
+      // Dragging a right (priority) tile — reorder only.
+      if (overIsPriority) {
+        const from = ids.indexOf(id)
+        let to = priorityIndexOf(overId)
+        if (to < 0) to = ids.length - 1
+        if (from >= 0 && to >= 0 && from !== to) setPriority(arrayMove(ids, from, to))
+      }
     }
+  }
 
-    // target.kind === 'bucket'
-    if (item.prioritized) {
-      // Demote to a bucket: drop from the queue and set its bucket.
-      const newIds = priorityIds.filter((x) => x !== id)
-      setItems((prev) =>
-        prev.map((it) => {
-          if (it.id === id)
-            return { ...it, prioritized: false, bucket_id: target.bucketId }
-          const idx = newIds.indexOf(it.id)
-          if (idx >= 0) return { ...it, position: idx }
-          return it
-        }),
-      )
-      fetch('/api/priority', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ids: newIds }),
-      }).catch(() => {})
-      fetch(`/api/items/${id}`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ bucket_id: target.bucketId }),
-      }).catch(() => {})
-    } else {
-      // Move between backlog buckets.
-      if ((item.bucket_id ?? null) === (target.bucketId ?? null)) return
-      patchItem(id, { bucket_id: target.bucketId })
-    }
+  function unprioritize(id) {
+    setPriority(priorityItems.map((i) => i.id).filter((x) => x !== id))
   }
 
   // ---- item + bucket actions ----------------------------------------------
 
-  function toggleType(id, type) {
-    patchItem(id, { type })
-  }
-
-  function renameItem(id, name) {
-    patchItem(id, { name })
-  }
+  const toggleType = (id, type) => patchItem(id, { type })
+  const renameItem = (id, name) => patchItem(id, { name })
 
   async function deleteItem(id) {
     const prev = items
@@ -284,69 +272,108 @@ export default function OrganizePage() {
         </Link>
       </nav>
 
-      <div className="mx-auto w-full max-w-md px-6 pb-24 pt-2">
+      <div className="mx-auto w-full max-w-5xl px-5 pb-24 pt-2">
         {items === null ? null : (
           <DndContext
             sensors={sensors}
             collisionDetection={closestCorners}
-            onDragStart={(e) => setActiveId(Number(e.active.id))}
+            onDragStart={(e) => setActiveDragId(e.active.id)}
             onDragEnd={onDragEnd}
-            onDragCancel={() => setActiveId(null)}
+            onDragCancel={() => setActiveDragId(null)}
           >
-            {/* Priority queue */}
-            <section className="mb-8">
-              <h2 className="mb-2 px-1 text-sm font-semibold uppercase tracking-wide text-neutral-800">
-                Priority
-              </h2>
-              <PriorityDroppable>
-                <SortableContext
-                  items={priorityItems.map((i) => i.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  {priorityItems.length === 0 ? (
-                    <p className="px-3 py-5 text-center text-sm text-neutral-300">
-                      Drag items here to queue them
-                    </p>
-                  ) : (
-                    priorityItems.map((item) => (
-                      <PriorityTile
-                        key={item.id}
-                        item={item}
-                        bucketName={bucketNameById.get(item.bucket_id) || 'Uncategorized'}
-                        onRename={renameItem}
-                        onToggleType={toggleType}
-                        onDelete={deleteItem}
+            <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+              {/* LEFT: backlog by category (everything) */}
+              <div>
+                <h2 className="mb-3 px-1 text-xs uppercase tracking-widest text-neutral-400">
+                  Backlog
+                </h2>
+                <div className="flex flex-col gap-6">
+                  {sections.map((sec) => (
+                    <BucketSection
+                      key={sec.key}
+                      section={sec}
+                      activeDragId={activeDragId}
+                      bucketNameById={bucketNameById}
+                      onAdd={(name, type) => addItem(sec.bucketId, name, type)}
+                      onRenameItem={renameItem}
+                      onToggleType={toggleType}
+                      onDeleteItem={deleteItem}
+                      onDelete={
+                        sec.bucketId != null ? () => deleteBucket(sec.bucketId) : null
+                      }
+                      onRename={
+                        sec.bucketId != null
+                          ? (name) => renameBucket(sec.bucketId, name)
+                          : null
+                      }
+                    />
+                  ))}
+
+                  {newOpen ? (
+                    <form onSubmit={createBucket} className="flex items-center gap-3 px-1">
+                      <input
+                        autoFocus
+                        value={newBucketName}
+                        onChange={(e) => setNewBucketName(e.target.value)}
+                        placeholder="Bucket name"
+                        className="flex-1 border-0 border-b border-neutral-200 bg-transparent pb-1 text-[15px] text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
                       />
-                    ))
+                      <button
+                        type="submit"
+                        disabled={!newBucketName.trim()}
+                        className="text-[15px] text-blue-500 disabled:opacity-30"
+                      >
+                        Add
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewOpen(false)
+                          setNewBucketName('')
+                        }}
+                        className="text-[15px] text-neutral-300"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setNewOpen(true)}
+                      className="px-1 text-left text-[15px] text-blue-500 transition hover:text-blue-600"
+                    >
+                      + New bucket
+                    </button>
                   )}
-                </SortableContext>
-              </PriorityDroppable>
-            </section>
+                </div>
+              </div>
 
-            <p className="mb-3 px-1 text-xs uppercase tracking-widest text-neutral-300">
-              Backlog
-            </p>
-
-            <div className="flex flex-col gap-7">
-              {sections.map((sec) => (
-                <BucketSection
-                  key={sec.key}
-                  section={sec}
-                  activeId={activeId}
-                  onAdd={(name, type) => addItem(sec.bucketId, name, type)}
-                  onRenameItem={renameItem}
-                  onToggleType={toggleType}
-                  onDeleteItem={deleteItem}
-                  onDelete={
-                    sec.bucketId != null ? () => deleteBucket(sec.bucketId) : null
-                  }
-                  onRename={
-                    sec.bucketId != null
-                      ? (name) => renameBucket(sec.bucketId, name)
-                      : null
-                  }
-                />
-              ))}
+              {/* RIGHT: priority queue */}
+              <div>
+                <h2 className="mb-3 px-1 text-xs uppercase tracking-widest text-neutral-400">
+                  Priority
+                </h2>
+                <PriorityDroppable>
+                  <SortableContext
+                    items={priorityItems.map((i) => `p-${i.id}`)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {priorityItems.length === 0 ? (
+                      <p className="px-3 py-6 text-center text-sm text-neutral-300">
+                        Drag items here to queue them
+                      </p>
+                    ) : (
+                      priorityItems.map((item) => (
+                        <PriorityTile
+                          key={item.id}
+                          item={item}
+                          bucketName={bucketNameById.get(item.bucket_id) || 'Uncategorized'}
+                          onRemove={() => unprioritize(item.id)}
+                        />
+                      ))
+                    )}
+                  </SortableContext>
+                </PriorityDroppable>
+              </div>
             </div>
 
             <DragOverlay>
@@ -357,42 +384,6 @@ export default function OrganizePage() {
               ) : null}
             </DragOverlay>
           </DndContext>
-        )}
-
-        {newOpen ? (
-          <form onSubmit={createBucket} className="mt-8 flex items-center gap-3">
-            <input
-              autoFocus
-              value={newBucketName}
-              onChange={(e) => setNewBucketName(e.target.value)}
-              placeholder="Bucket name"
-              className="flex-1 border-0 border-b border-neutral-200 bg-transparent pb-1 text-[15px] text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
-            />
-            <button
-              type="submit"
-              disabled={!newBucketName.trim()}
-              className="text-[15px] text-blue-500 disabled:opacity-30"
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setNewOpen(false)
-                setNewBucketName('')
-              }}
-              className="text-[15px] text-neutral-300"
-            >
-              Cancel
-            </button>
-          </form>
-        ) : (
-          <button
-            onClick={() => setNewOpen(true)}
-            className="mt-8 text-[15px] text-blue-500 transition hover:text-blue-600"
-          >
-            + New bucket
-          </button>
         )}
       </div>
     </main>
@@ -405,7 +396,7 @@ function PriorityDroppable({ children }) {
     <div
       ref={setNodeRef}
       className={
-        'flex min-h-[64px] flex-col gap-2 rounded-xl p-1 transition-colors ' +
+        'flex min-h-[120px] flex-col gap-2 rounded-xl p-1 transition-colors ' +
         (isOver ? 'bg-blue-50' : 'bg-neutral-50')
       }
     >
@@ -416,7 +407,7 @@ function PriorityDroppable({ children }) {
 
 function BucketSection({
   section,
-  activeId,
+  activeDragId,
   onAdd,
   onRenameItem,
   onToggleType,
@@ -477,9 +468,9 @@ function BucketSection({
             {section.name}
           </button>
         ) : (
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-800">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-800">
             {section.name}
-          </h2>
+          </h3>
         )}
         {onDelete ? (
           confirming ? (
@@ -512,20 +503,20 @@ function BucketSection({
       <div
         ref={setNodeRef}
         className={
-          'flex min-h-[52px] flex-col gap-2 rounded-xl p-1 transition-colors ' +
+          'flex min-h-[48px] flex-col gap-2 rounded-xl p-1 transition-colors ' +
           (isOver ? 'bg-blue-50' : 'bg-neutral-50')
         }
       >
         {section.items.length === 0 ? (
           <p className="px-3 py-4 text-center text-sm text-neutral-300">
-            Drag items here
+            Drop items here
           </p>
         ) : (
           section.items.map((item) => (
             <BacklogTile
               key={item.id}
               item={item}
-              dimmed={activeId === item.id}
+              dimmed={activeDragId === `b-${item.id}`}
               onRename={onRenameItem}
               onToggleType={onToggleType}
               onDelete={onDeleteItem}
@@ -584,59 +575,9 @@ function BucketSection({
   )
 }
 
-function PriorityTile({ item, bucketName, onRename, onToggleType, onDelete }) {
-  const { setNodeRef, listeners, attributes, transform, transition, isDragging } =
-    useSortable({ id: item.id })
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 10 : undefined,
-  }
-  return (
-    <ItemTile
-      item={item}
-      bucketName={bucketName}
-      innerRef={setNodeRef}
-      style={style}
-      dragging={isDragging}
-      handleProps={{ ...listeners, ...attributes }}
-      onRename={onRename}
-      onToggleType={onToggleType}
-      onDelete={onDelete}
-    />
-  )
-}
-
+// LEFT tile: draggable. Turns green once the item is in the priority queue.
 function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete }) {
-  const { setNodeRef, listeners, attributes } = useDraggable({ id: item.id })
-  return (
-    <ItemTile
-      item={item}
-      innerRef={setNodeRef}
-      dimmed={dimmed}
-      handleProps={{ ...listeners, ...attributes }}
-      onRename={onRename}
-      onToggleType={onToggleType}
-      onDelete={onDelete}
-    />
-  )
-}
-
-// Presentational tile shared by the Priority list and the backlog buckets.
-// Tapping the name opens an inline editor (name + One-off/Evergreen). The
-// default view stays quiet: grip, name (+ optional bucket), delete.
-function ItemTile({
-  item,
-  bucketName,
-  innerRef,
-  style,
-  dragging,
-  dimmed,
-  handleProps,
-  onRename,
-  onToggleType,
-  onDelete,
-}) {
+  const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.name)
   const [confirming, setConfirming] = useState(false)
@@ -650,19 +591,19 @@ function ItemTile({
 
   return (
     <div
-      ref={innerRef}
-      style={style}
+      ref={setNodeRef}
       className={
-        'flex items-center rounded-xl bg-white px-2 py-2.5 shadow-sm ' +
-        (dragging ? 'shadow-md ' : '') +
-        (dimmed ? 'opacity-30' : '')
+        'flex items-center rounded-xl px-2 py-2.5 shadow-sm transition-colors ' +
+        (item.prioritized ? 'bg-green-100' : 'bg-white') +
+        (dimmed ? ' opacity-30' : '')
       }
     >
       <button
         type="button"
         aria-label="Drag"
-        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-300 active:cursor-grabbing"
-        {...handleProps}
+        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
+        {...listeners}
+        {...attributes}
       >
         <GripGlyph />
       </button>
@@ -684,33 +625,23 @@ function ItemTile({
             className="w-full border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-[15px] font-light text-neutral-800 outline-none"
           />
           <div className="mt-2">
-            <MiniTypeToggle
-              type={item.type}
-              onChange={(t) => onToggleType(item.id, t)}
-            />
+            <MiniTypeToggle type={item.type} onChange={(t) => onToggleType(item.id, t)} />
           </div>
         </div>
       ) : (
         <>
-          <div className="min-w-0 flex-1">
-            <button
-              onClick={() => {
-                setDraft(item.name)
-                setEditing(true)
-              }}
-              aria-label="Rename item"
-              className="block w-full truncate text-left text-[15px] font-light text-neutral-800"
-            >
-              {item.name}
-            </button>
-            {bucketName ? (
-              <div className="truncate text-[11px] text-neutral-400">
-                {bucketName}
-              </div>
-            ) : null}
-          </div>
+          <button
+            onClick={() => {
+              setDraft(item.name)
+              setEditing(true)
+            }}
+            aria-label="Rename item"
+            className="min-w-0 flex-1 truncate text-left text-[15px] font-light text-neutral-800"
+          >
+            {item.name}
+          </button>
           {item.type === 'evergreen' ? (
-            <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-300">
+            <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
               Evergreen
             </span>
           ) : null}
@@ -724,7 +655,7 @@ function ItemTile({
               </button>
               <button
                 onClick={() => setConfirming(false)}
-                className="text-neutral-300 transition hover:text-neutral-500"
+                className="text-neutral-400 transition hover:text-neutral-600"
               >
                 No
               </button>
@@ -740,6 +671,50 @@ function ItemTile({
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// RIGHT tile: sortable. Shows its category; × removes it from the queue.
+function PriorityTile({ item, bucketName, onRemove }) {
+  const { setNodeRef, listeners, attributes, transform, transition, isDragging } =
+    useSortable({ id: `p-${item.id}` })
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : undefined,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={
+        'flex items-center rounded-xl bg-white px-2 py-2.5 shadow-sm ' +
+        (isDragging ? 'shadow-md' : '')
+      }
+    >
+      <button
+        type="button"
+        aria-label="Drag to reorder"
+        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
+        {...listeners}
+        {...attributes}
+      >
+        <GripGlyph />
+      </button>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[15px] font-light text-neutral-800">
+          {item.name}
+        </div>
+        <div className="truncate text-[11px] text-neutral-400">{bucketName}</div>
+      </div>
+      <button
+        onClick={onRemove}
+        aria-label="Remove from priority"
+        className="ml-2 shrink-0 text-lg leading-none text-neutral-300 transition hover:text-red-400"
+      >
+        ×
+      </button>
     </div>
   )
 }
