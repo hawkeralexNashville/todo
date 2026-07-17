@@ -184,6 +184,12 @@ export default function OrganizePage() {
     setPriority(priorityItems.map((i) => i.id).filter((x) => x !== id))
   }
 
+  function addToPriority(id) {
+    const ids = priorityItems.map((i) => i.id)
+    if (ids.includes(id)) return
+    setPriority([...ids, id]) // append to the bottom of the queue
+  }
+
   // ---- item + bucket actions ----------------------------------------------
 
   const toggleType = (id, type) => patchItem(id, { type })
@@ -298,6 +304,7 @@ export default function OrganizePage() {
                       onRenameItem={renameItem}
                       onToggleType={toggleType}
                       onDeleteItem={deleteItem}
+                      onAddToList={addToPriority}
                       onDelete={
                         sec.bucketId != null ? () => deleteBucket(sec.bucketId) : null
                       }
@@ -412,6 +419,7 @@ function BucketSection({
   onRenameItem,
   onToggleType,
   onDeleteItem,
+  onAddToList,
   onDelete,
   onRename,
 }) {
@@ -520,6 +528,7 @@ function BucketSection({
               onRename={onRenameItem}
               onToggleType={onToggleType}
               onDelete={onDeleteItem}
+              onAddToList={onAddToList}
             />
           ))
         )}
@@ -576,7 +585,7 @@ function BucketSection({
 }
 
 // LEFT tile: draggable. Turns green once the item is in the priority queue.
-function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete }) {
+function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToList }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.name)
@@ -644,6 +653,14 @@ function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete }) {
             <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
               Evergreen
             </span>
+          ) : null}
+          {!item.prioritized ? (
+            <button
+              onClick={() => onAddToList(item.id)}
+              className="ml-2 shrink-0 whitespace-nowrap text-[11px] text-blue-500 transition hover:text-blue-600"
+            >
+              Add to list
+            </button>
           ) : null}
           {confirming ? (
             <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs">
