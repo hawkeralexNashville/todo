@@ -253,6 +253,15 @@ export default function OrganizePage() {
     }).catch(() => {})
   }
 
+  async function resetToday() {
+    try {
+      await fetch('/api/reset', { method: 'POST' })
+    } catch {
+      // ignore; a retry is harmless
+    }
+    await load() // refetch so evergreens/skips reflect the reset
+  }
+
   async function deleteBucket(bucketId) {
     setBuckets((prev) => prev.filter((b) => b.id !== bucketId))
     setItems((prev) =>
@@ -276,6 +285,7 @@ export default function OrganizePage() {
         >
           Done
         </Link>
+        <ResetControl onReset={resetToday} />
       </nav>
 
       <div className="mx-auto w-full max-w-5xl px-5 pb-24 pt-2">
@@ -394,6 +404,51 @@ export default function OrganizePage() {
         )}
       </div>
     </main>
+  )
+}
+
+// Manual counterpart to the automatic 4 AM reset: flips today's completed
+// evergreens back to undone right now. A light two-tap confirm guards
+// against an accidental click undoing your progress mid-day.
+function ResetControl({ onReset }) {
+  const [confirming, setConfirming] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  async function handleConfirm() {
+    setBusy(true)
+    await onReset()
+    setBusy(false)
+    setConfirming(false)
+  }
+
+  if (confirming) {
+    return (
+      <span className="flex items-center gap-3 text-[15px]">
+        <button
+          onClick={handleConfirm}
+          disabled={busy}
+          className="text-red-400 transition hover:text-red-500 disabled:opacity-40"
+        >
+          {busy ? 'Resetting…' : 'Reset?'}
+        </button>
+        <button
+          onClick={() => setConfirming(false)}
+          disabled={busy}
+          className="text-neutral-300 transition hover:text-neutral-500"
+        >
+          No
+        </button>
+      </span>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => setConfirming(true)}
+      className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+    >
+      Reset
+    </button>
   )
 }
 
