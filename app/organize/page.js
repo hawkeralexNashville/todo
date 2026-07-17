@@ -110,6 +110,26 @@ export default function OrganizePage() {
     }
   }
 
+  async function renameBucket(bucketId, name) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const prev = buckets.find((b) => b.id === bucketId)?.name
+    setBuckets((list) =>
+      list.map((b) => (b.id === bucketId ? { ...b, name: trimmed } : b)),
+    )
+    try {
+      await fetch(`/api/buckets/${bucketId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      })
+    } catch {
+      setBuckets((list) =>
+        list.map((b) => (b.id === bucketId ? { ...b, name: prev } : b)),
+      )
+    }
+  }
+
   async function deleteBucket(bucketId) {
     setBuckets((prev) => prev.filter((b) => b.id !== bucketId))
     setItems((prev) =>
@@ -157,6 +177,11 @@ export default function OrganizePage() {
                   onDelete={
                     sec.bucketId != null
                       ? () => deleteBucket(sec.bucketId)
+                      : null
+                  }
+                  onRename={
+                    sec.bucketId != null
+                      ? (name) => renameBucket(sec.bucketId, name)
                       : null
                   }
                 />
@@ -213,16 +238,56 @@ export default function OrganizePage() {
   )
 }
 
-function BucketSection({ section, activeId, onDelete }) {
+function BucketSection({ section, activeId, onDelete, onRename }) {
   const { setNodeRef, isOver } = useDroppable({ id: section.key })
   const [confirming, setConfirming] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(section.name)
+
+  function commitRename() {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== section.name) {
+      onRename(trimmed)
+    } else {
+      setDraft(section.name)
+    }
+  }
 
   return (
     <section>
       <div className="mb-2 flex items-center justify-between px-1">
-        <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-          {section.name}
-        </h2>
+        {editing && onRename ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitRename()
+              if (e.key === 'Escape') {
+                setDraft(section.name)
+                setEditing(false)
+              }
+            }}
+            className="w-40 border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-xs font-medium uppercase tracking-wide text-neutral-600 outline-none"
+          />
+        ) : onRename ? (
+          <button
+            onClick={() => {
+              setDraft(section.name)
+              setEditing(true)
+            }}
+            aria-label={`Rename ${section.name}`}
+            className="text-xs font-medium uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600"
+          >
+            {section.name}
+          </button>
+        ) : (
+          <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+            {section.name}
+          </h2>
+        )}
         {onDelete ? (
           confirming ? (
             <span className="flex items-center gap-3 text-xs">
