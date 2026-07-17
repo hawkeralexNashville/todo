@@ -6,6 +6,7 @@ import Link from 'next/link'
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
   const [buckets, setBuckets] = useState([])
+  const [summary, setSummary] = useState(null) // { total, completed } for today
   const [exiting, setExiting] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -14,12 +15,14 @@ export default function Home() {
   }, [])
 
   async function load() {
-    const [ri, rb] = await Promise.all([
+    const [ri, rb, rs] = await Promise.all([
       fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/items/summary', { cache: 'no-store' }).then((r) => r.json()),
     ])
     setItems(ri.items || [])
     setBuckets(rb.buckets || [])
+    setSummary(rs)
   }
 
   const bucketNameById = useMemo(() => {
@@ -61,6 +64,7 @@ export default function Home() {
     } catch {
       // Advance anyway; a reload will resync.
     }
+    setSummary((s) => (s ? { ...s, completed: s.completed + 1 } : s))
     fadeThen(() =>
       setItems((prev) => (prev ? prev.filter((i) => i.id !== id) : prev)),
     )
@@ -121,24 +125,24 @@ export default function Home() {
             <p className="mt-3 text-xs uppercase tracking-widest text-neutral-400">
               {bucketNameById.get(current.bucket_id) || 'Uncategorized'}
             </p>
-            <div className="mt-10 flex items-center justify-center gap-6">
+            <div className="mt-10 flex items-center justify-center gap-3">
               <Link
                 href="/add"
-                className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+                className="rounded-full px-5 py-2.5 text-[15px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 active:bg-neutral-200"
               >
                 Add
               </Link>
               <button
                 onClick={skip}
                 disabled={busy}
-                className="text-[15px] text-neutral-400 transition hover:text-neutral-600 disabled:opacity-40"
+                className="rounded-full px-5 py-2.5 text-[15px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 active:bg-neutral-200 disabled:opacity-40"
               >
                 Skip
               </button>
               <button
                 onClick={markDone}
                 disabled={busy}
-                className="text-[15px] text-blue-500 transition hover:text-blue-600 disabled:opacity-40"
+                className="rounded-full bg-blue-50 px-6 py-2.5 text-[15px] font-medium text-blue-600 transition hover:bg-blue-100 active:bg-blue-200 disabled:opacity-40"
               >
                 Done
               </button>
@@ -147,16 +151,16 @@ export default function Home() {
         ) : (
           <div className="fade-in">
             <p className="text-2xl font-light text-neutral-300">Nothing queued</p>
-            <div className="mt-10 flex items-center justify-center gap-6">
+            <div className="mt-10 flex items-center justify-center gap-3">
               <Link
                 href="/add"
-                className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+                className="rounded-full px-5 py-2.5 text-[15px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 active:bg-neutral-200"
               >
                 Add
               </Link>
               <Link
                 href="/organize"
-                className="text-[15px] text-blue-500 transition hover:text-blue-600"
+                className="rounded-full bg-blue-50 px-6 py-2.5 text-[15px] font-medium text-blue-600 transition hover:bg-blue-100 active:bg-blue-200"
               >
                 Organize
               </Link>
@@ -164,6 +168,12 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {summary && summary.total > 0 ? (
+        <p className="absolute inset-x-0 bottom-8 text-center text-xs text-neutral-300">
+          {summary.completed}/{summary.total} complete
+        </p>
+      ) : null}
     </main>
   )
 }
