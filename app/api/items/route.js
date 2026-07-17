@@ -1,30 +1,33 @@
 import { NextResponse } from 'next/server'
 import { getSupabase } from '@/lib/supabase'
-import { runDailyReset, logicalDay } from '@/lib/reset'
+import { runDailyReset, logicalDay, getLastResetAt } from '@/lib/reset'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET /api/items -> active items, plus items completed today, in priority
-// order (runs the daily reset first).
+// GET /api/items -> active items, plus items completed since the last reset,
+// in priority order (runs the daily reset first).
 //
-// Including today's completions (evergreen done_today, or a one-off finished
-// today) lets Organize show a finished item in place, marked done, instead of
-// it vanishing — useful when reviewing/prepping at the end of the day. A
-// one-off completed on an earlier day is excluded (it never reappears, per
-// the one-off rule); an evergreen from an earlier day is excluded too (the
-// daily reset already flips it back to active before this query runs).
+// Including recent completions (evergreen done_today, or a one-off finished
+// since the last reset) lets Organize show a finished item in place, marked
+// done, instead of it vanishing — useful when reviewing/prepping at the end
+// of the day. A one-off finished before the last reset (automatic OR
+// manual) is excluded — it never reappears, per the one-off rule, and a
+// manual Reset click ages it out immediately, same as evergreens. An
+// evergreen from before the last reset is excluded too (the reset already
+// flipped it back to active before this query runs).
 //
 // Each item is annotated with:
-//   done    - true if it's a today's-completion row rather than a live active one
+//   done    - true if it's a recent-completion row rather than a live active one
 //   skipped - true if it was skipped during the current logical day
 export async function GET() {
   const supabase = getSupabase()
   await runDailyReset(supabase)
 
   const today = logicalDay()
+  const lastResetAt = await getLastResetAt(supabase)
   // Coarse bound so we don't scan the full soft-delete history; the exact
-  // "is this today" check happens below via logicalDay().
+  // cutoff check happens below via lastResetAt.
   const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
 
   const { data, error } = await supabase
@@ -41,7 +44,10 @@ export async function GET() {
     .filter((it) => {
       if (it.status === 'active') return true
       if (it.status === 'done_today') return true // reset already ran above
-      return it.completed_at && logicalDay(new Date(it.completed_at)) === today
+      if (!it.completed_at) return false
+      const completedAt = new Date(it.completed_at)
+      // Before any reset has ever run, fall back to calendar-day matching.
+      return lastResetAt ? completedAt > lastResetAt : logicalDay(completedAt) === today
     })
     .map((it) => ({
       ...it,
