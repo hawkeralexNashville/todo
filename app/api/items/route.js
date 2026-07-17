@@ -15,7 +15,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('items')
-    .select('id, name, type, status, position, bucket_id, completed_at, created_at, skipped_at')
+    .select('id, name, type, status, position, prioritized, bucket_id, completed_at, created_at, skipped_at')
     .eq('status', 'active')
     .order('position', { ascending: true })
 
@@ -63,20 +63,17 @@ export async function POST(req) {
     bucketId = body.bucket_id
   }
 
-  // Append to the bottom: one past the current max active position.
-  const { data: last } = await supabase
-    .from('items')
-    .select('position')
-    .eq('status', 'active')
-    .order('position', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  const position = last ? last.position + 1 : 0
-
+  // New items start in the backlog (prioritized = false). They only join the
+  // queue once dragged into the Priority list on the Organize screen.
   const { data, error } = await supabase
     .from('items')
-    .insert({ name, type, status: 'active', position, bucket_id: bucketId })
+    .insert({
+      name,
+      type,
+      status: 'active',
+      prioritized: false,
+      bucket_id: bucketId,
+    })
     .select()
     .single()
 

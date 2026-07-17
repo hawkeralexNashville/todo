@@ -28,12 +28,14 @@ export default function Home() {
     return m
   }, [buckets])
 
-  // Today's queue: non-skipped items first (in priority order), then the items
-  // skipped today (oldest skip first) so you always cycle back to them.
+  // Today's queue: only prioritized items (the backlog stays off Home).
+  // Non-skipped first in priority order, then items skipped today (oldest skip
+  // first) so you always cycle back to them.
   const queue = useMemo(() => {
     if (!items) return []
-    const active = items.filter((i) => !i.skipped)
-    const skipped = items
+    const pri = items.filter((i) => i.prioritized)
+    const active = pri.filter((i) => !i.skipped)
+    const skipped = pri
       .filter((i) => i.skipped)
       .sort((a, b) => (a.skipped_at || '').localeCompare(b.skipped_at || ''))
     return [...active, ...skipped]
@@ -88,22 +90,13 @@ export default function Home() {
     <main className="relative min-h-dvh bg-canvas">
       {/* Unobtrusive top-corner controls */}
       <nav className="absolute inset-x-0 top-0 flex items-center justify-between px-5 py-4 text-neutral-300">
-        <div className="flex items-center gap-1">
-          <Link
-            href="/reorder"
-            aria-label="Reorder"
-            className="p-1 transition hover:text-neutral-500"
-          >
-            <ReorderGlyph />
-          </Link>
-          <Link
-            href="/organize"
-            aria-label="Organize buckets"
-            className="p-1 transition hover:text-neutral-500"
-          >
-            <OrganizeGlyph />
-          </Link>
-        </div>
+        <Link
+          href="/organize"
+          aria-label="Organize and prioritize"
+          className="p-1 transition hover:text-neutral-500"
+        >
+          <OrganizeGlyph />
+        </Link>
         <Link
           href="/done"
           aria-label="Done items"
@@ -153,29 +146,25 @@ export default function Home() {
           </div>
         ) : (
           <div className="fade-in">
-            <p className="text-2xl font-light text-neutral-300">Nothing to do</p>
-            <div className="mt-10">
+            <p className="text-2xl font-light text-neutral-300">Nothing queued</p>
+            <div className="mt-10 flex items-center justify-center gap-6">
               <Link
                 href="/add"
-                className="text-[15px] text-blue-500 transition hover:text-blue-600"
+                className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
               >
                 Add
+              </Link>
+              <Link
+                href="/organize"
+                className="text-[15px] text-blue-500 transition hover:text-blue-600"
+              >
+                Organize
               </Link>
             </div>
           </div>
         )}
       </div>
     </main>
-  )
-}
-
-function ReorderGlyph() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <line x1="4" y1="6" x2="16" y2="6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      <line x1="4" y1="14" x2="16" y2="14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
   )
 }
 

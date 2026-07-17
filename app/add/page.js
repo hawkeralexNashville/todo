@@ -55,7 +55,8 @@ export default function AddPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name: trimmed, type, bucket_id: bucketId }),
       })
-      router.push('/')
+      // New items land in the backlog, so go to Organize to see/queue them.
+      router.push('/organize')
     } catch {
       setBusy(false)
     }

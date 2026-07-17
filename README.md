@@ -6,8 +6,11 @@ behind a single shared password.
 
 - **One-off** tasks disappear for good when done (kept in history).
 - **Evergreen** tasks come back every day (they reset at 4:00 AM local time).
-- **Home** shows only the top item. **Reorder** is where you set priority.
-  **Done** is the history, where you can permanently delete items.
+- **Home** shows only the top item in your priority queue.
+- **Organize** is the hub: a **Priority** list (the queue Home follows, drag to
+  order) plus a **backlog** grouped into buckets. New items start in the backlog;
+  drag one up into Priority to queue it, or back down to defer it.
+- **Done** is the history, where you can permanently delete items.
 
 Built with Next.js (App Router) + Supabase (Postgres) + Tailwind. The password
 gate runs server-side in Next.js middleware — it is a real gate, not something
@@ -96,9 +99,13 @@ Then open <http://localhost:3000>.
 - `middleware.js` — the password gate. Blocks every route except the login
   page/API until a valid signed cookie is present.
 - `app/api/login/route.js` — checks the password and sets the signed cookie.
-- `app/api/items/*` — create, list (active), mark done, hard delete.
-- `app/api/reorder/route.js` — commits a new order.
+- `app/api/items/*` — create (into backlog), list (active), mark done, skip,
+  rename/retype/rebucket, hard delete.
+- `app/api/priority/route.js` — sets the whole priority queue (promote, demote,
+  and reorder in one call).
+- `app/api/buckets/*` — create, rename, delete buckets.
 - `lib/reset.js` — the 4 AM daily reset for evergreen items, run on load.
-- `app/page.js` — Home (one item). `app/add`, `app/reorder`, `app/done` — the
-  other three screens.
-- `schema.sql` — the database tables.
+- `app/page.js` — Home (one item). `app/organize` — Priority queue + backlog
+  buckets. `app/add`, `app/done` — the other screens.
+- `schema.sql` — the database tables. `migration-*.sql` — incremental changes
+  for a database created before a feature existed.
