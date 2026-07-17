@@ -298,7 +298,7 @@ function BucketSection({ section, activeId, onAdd, onDelete, onRename }) {
                 setEditing(false)
               }
             }}
-            className="w-40 border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-xs font-medium uppercase tracking-wide text-neutral-600 outline-none"
+            className="w-48 border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-sm font-semibold uppercase tracking-wide text-neutral-800 outline-none"
           />
         ) : onRename ? (
           <button
@@ -307,12 +307,12 @@ function BucketSection({ section, activeId, onAdd, onDelete, onRename }) {
               setEditing(true)
             }}
             aria-label={`Rename ${section.name}`}
-            className="text-xs font-medium uppercase tracking-wide text-neutral-400 transition hover:text-neutral-600"
+            className="text-sm font-semibold uppercase tracking-wide text-neutral-800 transition hover:text-blue-500"
           >
             {section.name}
           </button>
         ) : (
-          <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-800">
             {section.name}
           </h2>
         )}
