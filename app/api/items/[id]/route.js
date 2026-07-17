@@ -5,6 +5,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // PATCH /api/items/:id  body may include:
+//   name:      string                    (rename the item)
 //   type:      'one_off' | 'evergreen'   (fix a mistake made when adding)
 //   bucket_id: integer | null            (move to a bucket, or Uncategorized)
 export async function PATCH(req, { params }) {
@@ -19,6 +20,14 @@ export async function PATCH(req, { params }) {
   }
 
   const updates = {}
+
+  if ('name' in body) {
+    const name = typeof body.name === 'string' ? body.name.trim() : ''
+    if (!name) {
+      return NextResponse.json({ error: 'Name is required.' }, { status: 400 })
+    }
+    updates.name = name
+  }
 
   if ('type' in body) {
     if (body.type !== 'one_off' && body.type !== 'evergreen') {

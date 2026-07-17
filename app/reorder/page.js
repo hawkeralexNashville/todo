@@ -79,6 +79,27 @@ export default function ReorderPage() {
     }
   }
 
+  async function renameItem(id, name) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const prev = items?.find((i) => i.id === id)?.name
+    if (trimmed === prev) return
+    setItems((list) =>
+      list ? list.map((i) => (i.id === id ? { ...i, name: trimmed } : i)) : list,
+    )
+    try {
+      await fetch(`/api/items/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      })
+    } catch {
+      setItems((list) =>
+        list ? list.map((i) => (i.id === id ? { ...i, name: prev } : i)) : list,
+      )
+    }
+  }
+
   async function save() {
     if (busy || !items) return
     setBusy(true)
@@ -138,6 +159,7 @@ export default function ReorderPage() {
                     item={item}
                     bucketName={bucketNameById.get(item.bucket_id) || null}
                     onToggleType={toggleType}
+                    onRename={renameItem}
                   />
                 ))}
               </ul>
@@ -149,13 +171,25 @@ export default function ReorderPage() {
   )
 }
 
-function SortableTile({ item, bucketName, onToggleType }) {
+function SortableTile({ item, bucketName, onToggleType, onRename }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id })
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(item.name)
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  }
+
+  function commit() {
+    setEditing(false)
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== item.name) {
+      onRename(item.id, trimmed)
+    } else {
+      setDraft(item.name)
+    }
   }
 
   return (
@@ -178,7 +212,33 @@ function SortableTile({ item, bucketName, onToggleType }) {
         <GripGlyph />
       </button>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[17px] font-light">{item.name}</div>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commit()
+              if (e.key === 'Escape') {
+                setDraft(item.name)
+                setEditing(false)
+              }
+            }}
+            className="w-full border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-[17px] font-light text-neutral-800 outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => {
+              setDraft(item.name)
+              setEditing(true)
+            }}
+            aria-label="Rename item"
+            className="block w-full truncate text-left text-[17px] font-light"
+          >
+            {item.name}
+          </button>
+        )}
         {bucketName ? (
           <div className="truncate text-xs text-neutral-400">{bucketName}</div>
         ) : null}
