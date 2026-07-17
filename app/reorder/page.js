@@ -43,6 +43,31 @@ export default function ReorderPage() {
     })
   }
 
+  async function toggleType(id, nextType) {
+    // Persist immediately (a type fix is independent of the drag order).
+    setItems((prev) =>
+      prev ? prev.map((i) => (i.id === id ? { ...i, type: nextType } : i)) : prev,
+    )
+    try {
+      await fetch(`/api/items/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: nextType }),
+      })
+    } catch {
+      // Revert on failure.
+      setItems((prev) =>
+        prev
+          ? prev.map((i) =>
+              i.id === id
+                ? { ...i, type: nextType === 'one_off' ? 'evergreen' : 'one_off' }
+                : i,
+            )
+          : prev,
+      )
+    }
+  }
+
   async function save() {
     if (busy || !items) return
     setBusy(true)
@@ -91,7 +116,11 @@ export default function ReorderPage() {
             >
               <ul className="flex flex-col gap-2">
                 {items.map((item) => (
-                  <SortableTile key={item.id} item={item} />
+                  <SortableTile
+                    key={item.id}
+                    item={item}
+                    onToggleType={toggleType}
+                  />
                 ))}
               </ul>
             </SortableContext>
@@ -102,7 +131,7 @@ export default function ReorderPage() {
   )
 }
 
-function SortableTile({ item }) {
+function SortableTile({ item, onToggleType }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id })
 
@@ -115,23 +144,65 @@ function SortableTile({ item }) {
     <li
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
       className={
-        'flex cursor-grab select-none items-center rounded-xl bg-white px-5 py-4 text-neutral-800 transition-shadow active:cursor-grabbing ' +
+        'flex select-none items-center rounded-xl bg-white py-3 pl-3 pr-3 text-neutral-800 transition-shadow ' +
         (isDragging ? 'z-10 shadow-md' : 'shadow-sm')
       }
     >
-      <span className="mr-4 text-neutral-300" aria-hidden="true">
+      {/* Drag handle — only this grabs the tile, so the toggle stays tappable. */}
+      <button
+        type="button"
+        aria-label="Drag to reorder"
+        className="mr-3 cursor-grab touch-none px-1 text-neutral-300 active:cursor-grabbing"
+        {...attributes}
+        {...listeners}
+      >
         <GripGlyph />
+      </button>
+      <span className="min-w-0 flex-1 truncate text-[17px] font-light">
+        {item.name}
       </span>
-      <span className="flex-1 text-[17px] font-light">{item.name}</span>
-      {item.type === 'evergreen' ? (
-        <span className="ml-3 text-xs uppercase tracking-wide text-neutral-300">
-          Evergreen
-        </span>
-      ) : null}
+      <TypeToggle
+        type={item.type}
+        onChange={(next) => onToggleType(item.id, next)}
+      />
     </li>
+  )
+}
+
+function TypeToggle({ type, onChange }) {
+  return (
+    <div className="ml-3 flex shrink-0 rounded-full bg-neutral-100 p-0.5 text-[11px]">
+      <TypeOption active={type === 'one_off'} onClick={() => onChange('one_off')}>
+        One-off
+      </TypeOption>
+      <TypeOption
+        active={type === 'evergreen'}
+        onClick={() => onChange('evergreen')}
+      >
+        Evergreen
+      </TypeOption>
+    </div>
+  )
+}
+
+function TypeOption({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={
+        'rounded-full px-2.5 py-1 transition ' +
+        (active
+          ? 'bg-white text-neutral-700 shadow-sm'
+          : 'text-neutral-400 hover:text-neutral-600')
+      }
+    >
+      {children}
+    </button>
   )
 }
 
