@@ -110,6 +110,22 @@ export default function OrganizePage() {
     }
   }
 
+  async function addItem(bucketId, name, type) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    try {
+      const res = await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: trimmed, type, bucket_id: bucketId }),
+      })
+      const data = await res.json()
+      if (data.item) setItems((prev) => (prev ? [...prev, data.item] : [data.item]))
+    } catch {
+      // ignore
+    }
+  }
+
   async function renameBucket(bucketId, name) {
     const trimmed = name.trim()
     if (!trimmed) return
@@ -174,6 +190,7 @@ export default function OrganizePage() {
                   key={sec.key}
                   section={sec}
                   activeId={activeId}
+                  onAdd={(name, type) => addItem(sec.bucketId, name, type)}
                   onDelete={
                     sec.bucketId != null
                       ? () => deleteBucket(sec.bucketId)
@@ -238,11 +255,22 @@ export default function OrganizePage() {
   )
 }
 
-function BucketSection({ section, activeId, onDelete, onRename }) {
+function BucketSection({ section, activeId, onAdd, onDelete, onRename }) {
   const { setNodeRef, isOver } = useDroppable({ id: section.key })
   const [confirming, setConfirming] = useState(false)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(section.name)
+  const [adding, setAdding] = useState(false)
+  const [newName, setNewName] = useState('')
+  const [newType, setNewType] = useState('one_off')
+
+  function submitNew(e) {
+    e.preventDefault()
+    const trimmed = newName.trim()
+    if (!trimmed) return
+    onAdd(trimmed, newType)
+    setNewName('') // keep the form open to add several quickly
+  }
 
   function commitRename() {
     setEditing(false)
@@ -337,7 +365,84 @@ function BucketSection({ section, activeId, onDelete, onRename }) {
           ))
         )}
       </div>
+
+      {adding ? (
+        <form onSubmit={submitNew} className="mt-2 px-1">
+          <input
+            autoFocus
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setAdding(false)
+                setNewName('')
+              }
+            }}
+            placeholder="New item"
+            className="w-full border-0 border-b border-neutral-200 bg-transparent pb-1 text-[15px] font-light text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
+          />
+          <div className="mt-2 flex items-center justify-between">
+            <div className="flex rounded-full bg-neutral-100 p-0.5 text-[11px]">
+              <MiniType
+                active={newType === 'one_off'}
+                onClick={() => setNewType('one_off')}
+              >
+                One-off
+              </MiniType>
+              <MiniType
+                active={newType === 'evergreen'}
+                onClick={() => setNewType('evergreen')}
+              >
+                Evergreen
+              </MiniType>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={!newName.trim()}
+                className="text-sm text-blue-500 transition hover:text-blue-600 disabled:opacity-30"
+              >
+                Add
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdding(false)
+                  setNewName('')
+                }}
+                className="text-sm text-neutral-300 transition hover:text-neutral-500"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </form>
+      ) : (
+        <button
+          onClick={() => setAdding(true)}
+          className="mt-2 px-2 text-sm text-neutral-400 transition hover:text-blue-500"
+        >
+          + Add item
+        </button>
+      )}
     </section>
+  )
+}
+
+function MiniType({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'rounded-full px-2.5 py-1 transition ' +
+        (active
+          ? 'bg-white text-neutral-700 shadow-sm'
+          : 'text-neutral-400 hover:text-neutral-600')
+      }
+    >
+      {children}
+    </button>
   )
 }
 
