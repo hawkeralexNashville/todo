@@ -110,6 +110,16 @@ export default function OrganizePage() {
     }
   }
 
+  async function deleteItem(id) {
+    const prev = items
+    setItems((list) => (list ? list.filter((i) => i.id !== id) : list))
+    try {
+      await fetch(`/api/items/${id}`, { method: 'DELETE' })
+    } catch {
+      setItems(prev) // restore on failure
+    }
+  }
+
   async function addItem(bucketId, name, type) {
     const trimmed = name.trim()
     if (!trimmed) return
@@ -191,6 +201,7 @@ export default function OrganizePage() {
                   section={sec}
                   activeId={activeId}
                   onAdd={(name, type) => addItem(sec.bucketId, name, type)}
+                  onDeleteItem={deleteItem}
                   onDelete={
                     sec.bucketId != null
                       ? () => deleteBucket(sec.bucketId)
@@ -255,7 +266,7 @@ export default function OrganizePage() {
   )
 }
 
-function BucketSection({ section, activeId, onAdd, onDelete, onRename }) {
+function BucketSection({ section, activeId, onAdd, onDeleteItem, onDelete, onRename }) {
   const { setNodeRef, isOver } = useDroppable({ id: section.key })
   const [confirming, setConfirming] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -361,6 +372,7 @@ function BucketSection({ section, activeId, onAdd, onDelete, onRename }) {
               key={item.id}
               item={item}
               dimmed={activeId === item.id}
+              onDelete={() => onDeleteItem(item.id)}
             />
           ))
         )}
@@ -446,29 +458,67 @@ function MiniType({ active, onClick, children }) {
   )
 }
 
-function DraggableItem({ item, dimmed }) {
+function DraggableItem({ item, dimmed, onDelete }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: item.id })
+  const [confirming, setConfirming] = useState(false)
 
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       className={
-        'flex cursor-grab touch-none select-none items-center rounded-xl bg-white px-4 py-3 text-[16px] font-light text-neutral-800 shadow-sm active:cursor-grabbing ' +
+        'flex select-none items-center rounded-xl bg-white px-3 py-3 text-[16px] font-light text-neutral-800 shadow-sm ' +
         (dimmed ? 'opacity-30' : '')
       }
     >
-      <span className="mr-3 text-neutral-300" aria-hidden="true">
+      {/* Drag handle — only this grabs the tile, so delete stays tappable. */}
+      <button
+        type="button"
+        aria-label="Drag to a bucket"
+        className="mr-2 cursor-grab touch-none px-1 text-neutral-300 active:cursor-grabbing"
+        {...listeners}
+        {...attributes}
+      >
         <GripGlyph />
-      </span>
+      </button>
       <span className="min-w-0 flex-1 truncate">{item.name}</span>
       {item.type === 'evergreen' ? (
         <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-300">
           Evergreen
         </span>
       ) : null}
+      {confirming ? (
+        <span className="ml-3 flex items-center gap-2 text-xs">
+          <button
+            onClick={onDelete}
+            className="text-red-400 transition hover:text-red-500"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setConfirming(false)}
+            className="text-neutral-300 transition hover:text-neutral-500"
+          >
+            No
+          </button>
+        </span>
+      ) : (
+        <button
+          onClick={() => setConfirming(true)}
+          aria-label="Delete item"
+          className="ml-3 text-neutral-300 transition hover:text-red-400"
+        >
+          <TrashGlyph />
+        </button>
+      )}
     </div>
+  )
+}
+
+function TrashGlyph() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M3.5 5h11M7 5V3.5h4V5M6 5l.5 9h5l.5-9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   )
 }
 
