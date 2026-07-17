@@ -138,7 +138,7 @@ export default function OrganizePage() {
     const activeStr = String(active.id)
     const id = Number(activeStr.slice(2))
     const item = itemsById.get(id)
-    if (!item) return
+    if (!item || item.done) return // finished items are not draggable
 
     const overId = over.id
     const ids = priorityItems.map((i) => i.id)
@@ -584,7 +584,9 @@ function BucketSection({
   )
 }
 
-// LEFT tile: draggable. Turns green once the item is in the priority queue.
+// LEFT tile: draggable. Turns light green once queued; turns solid green with
+// a checkmark once completed today (read-only — editing/deleting a finished
+// item belongs on the Done screen).
 function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToList }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
   const [editing, setEditing] = useState(false)
@@ -596,6 +598,24 @@ function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToLi
     const trimmed = draft.trim()
     if (trimmed && trimmed !== item.name) onRename(item.id, trimmed)
     else setDraft(item.name)
+  }
+
+  if (item.done) {
+    return (
+      <div className="flex items-center rounded-xl bg-green-200 px-2 py-2.5 shadow-sm">
+        <span className="mr-1.5 shrink-0 px-1 text-green-700" aria-hidden="true">
+          <CheckGlyph />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[15px] font-light text-neutral-500 line-through decoration-neutral-400">
+          {item.name}
+        </span>
+        {item.type === 'evergreen' ? (
+          <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-green-700">
+            Evergreen
+          </span>
+        ) : null}
+      </div>
+    )
   }
 
   return (
@@ -693,9 +713,11 @@ function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToLi
 }
 
 // RIGHT tile: sortable. Shows its category; × removes it from the queue.
+// Once completed today it turns green with a checkmark and is no longer
+// draggable, but × still works if you want to drop it from tomorrow's queue.
 function PriorityTile({ item, bucketName, onRemove }) {
   const { setNodeRef, listeners, attributes, transform, transition, isDragging } =
-    useSortable({ id: `p-${item.id}` })
+    useSortable({ id: `p-${item.id}`, disabled: item.done })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -706,24 +728,44 @@ function PriorityTile({ item, bucketName, onRemove }) {
       ref={setNodeRef}
       style={style}
       className={
-        'flex items-center rounded-xl bg-white px-2 py-2.5 shadow-sm ' +
-        (isDragging ? 'shadow-md' : '')
+        'flex items-center rounded-xl px-2 py-2.5 shadow-sm ' +
+        (item.done ? 'bg-green-200' : 'bg-white') +
+        (isDragging ? ' shadow-md' : '')
       }
     >
-      <button
-        type="button"
-        aria-label="Drag to reorder"
-        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
-        {...listeners}
-        {...attributes}
-      >
-        <GripGlyph />
-      </button>
+      {item.done ? (
+        <span className="mr-1.5 shrink-0 px-1 text-green-700" aria-hidden="true">
+          <CheckGlyph />
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-label="Drag to reorder"
+          className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
+          {...listeners}
+          {...attributes}
+        >
+          <GripGlyph />
+        </button>
+      )}
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[15px] font-light text-neutral-800">
+        <div
+          className={
+            'truncate text-[15px] font-light ' +
+            (item.done
+              ? 'text-neutral-500 line-through decoration-neutral-400'
+              : 'text-neutral-800')
+          }
+        >
           {item.name}
         </div>
-        <div className="truncate text-[11px] text-neutral-400">{bucketName}</div>
+        <div
+          className={
+            'truncate text-[11px] ' + (item.done ? 'text-green-700' : 'text-neutral-400')
+          }
+        >
+          {bucketName}
+        </div>
       </div>
       <button
         onClick={onRemove}
@@ -775,6 +817,14 @@ function GripGlyph() {
       <circle cx="10" cy="8" r="1" />
       <circle cx="6" cy="12" r="1" />
       <circle cx="10" cy="12" r="1" />
+    </svg>
+  )
+}
+
+function CheckGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3.5 8.5l3 3 6-6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

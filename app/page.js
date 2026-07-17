@@ -31,12 +31,13 @@ export default function Home() {
     return m
   }, [buckets])
 
-  // Today's queue: only prioritized items (the backlog stays off Home).
+  // Today's queue: only prioritized, still-active items (the backlog stays
+  // off Home, and anything already completed today should not resurface).
   // Non-skipped first in priority order, then items skipped today (oldest skip
   // first) so you always cycle back to them.
   const queue = useMemo(() => {
     if (!items) return []
-    const pri = items.filter((i) => i.prioritized)
+    const pri = items.filter((i) => i.prioritized && !i.done)
     const active = pri.filter((i) => !i.skipped)
     const skipped = pri
       .filter((i) => i.skipped)

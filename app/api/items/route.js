@@ -5,31 +5,51 @@ import { runDailyReset, logicalDay } from '@/lib/reset'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// GET /api/items -> active items in priority order (runs the daily reset first).
-// Each item is annotated with `skipped`: true if it was skipped during the
-// current logical day. The list stays in position order; the Home screen uses
-// `skipped` to move skipped items to the back of today's queue.
+// GET /api/items -> active items, plus items completed today, in priority
+// order (runs the daily reset first).
+//
+// Including today's completions (evergreen done_today, or a one-off finished
+// today) lets Organize show a finished item in place, marked done, instead of
+// it vanishing — useful when reviewing/prepping at the end of the day. A
+// one-off completed on an earlier day is excluded (it never reappears, per
+// the one-off rule); an evergreen from an earlier day is excluded too (the
+// daily reset already flips it back to active before this query runs).
+//
+// Each item is annotated with:
+//   done    - true if it's a today's-completion row rather than a live active one
+//   skipped - true if it was skipped during the current logical day
 export async function GET() {
   const supabase = getSupabase()
   await runDailyReset(supabase)
 
+  const today = logicalDay()
+  // Coarse bound so we don't scan the full soft-delete history; the exact
+  // "is this today" check happens below via logicalDay().
+  const cutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+
   const { data, error } = await supabase
     .from('items')
     .select('id, name, type, status, position, prioritized, bucket_id, completed_at, created_at, skipped_at')
-    .eq('status', 'active')
+    .or(`status.eq.active,status.eq.done_today,and(status.eq.deleted,completed_at.gte.${cutoff})`)
     .order('position', { ascending: true })
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  const today = logicalDay()
-  const items = data.map((it) => ({
-    ...it,
-    skipped: it.skipped_at
-      ? logicalDay(new Date(it.skipped_at)) === today
-      : false,
-  }))
+  const items = data
+    .filter((it) => {
+      if (it.status === 'active') return true
+      if (it.status === 'done_today') return true // reset already ran above
+      return it.completed_at && logicalDay(new Date(it.completed_at)) === today
+    })
+    .map((it) => ({
+      ...it,
+      done: it.status !== 'active',
+      skipped: it.skipped_at
+        ? logicalDay(new Date(it.skipped_at)) === today
+        : false,
+    }))
 
   return NextResponse.json({ items })
 }
