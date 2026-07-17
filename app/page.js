@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 
 export default function Home() {
-  const [items, setItems] = useState(null) // null = loading
+  const [items, setItems] = useState(null) // null = loading; array in position order
   const [exiting, setExiting] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -18,23 +18,60 @@ export default function Home() {
     setItems(data.items || [])
   }
 
-  const current = items && items.length > 0 ? items[0] : null
+  // Today's queue: non-skipped items first (in priority order), then the items
+  // skipped today (oldest skip first) so you always cycle back to them.
+  const queue = useMemo(() => {
+    if (!items) return []
+    const active = items.filter((i) => !i.skipped)
+    const skipped = items
+      .filter((i) => i.skipped)
+      .sort((a, b) => (a.skipped_at || '').localeCompare(b.skipped_at || ''))
+    return [...active, ...skipped]
+  }, [items])
 
-  async function markDone() {
-    if (!current || busy) return
+  const current = queue.length > 0 ? queue[0] : null
+
+  function fadeThen(update) {
     setBusy(true)
     setExiting(true)
-    try {
-      await fetch(`/api/items/${current.id}/done`, { method: 'POST' })
-    } catch {
-      // If it fails, still advance the local view; a reload will resync.
-    }
-    // Wait for the fade-out, then advance to the next item.
     setTimeout(() => {
-      setItems((prev) => (prev ? prev.slice(1) : prev))
+      update()
       setExiting(false)
       setBusy(false)
     }, 220)
+  }
+
+  async function markDone() {
+    if (!current || busy) return
+    const id = current.id
+    try {
+      await fetch(`/api/items/${id}/done`, { method: 'POST' })
+    } catch {
+      // Advance anyway; a reload will resync.
+    }
+    fadeThen(() =>
+      setItems((prev) => (prev ? prev.filter((i) => i.id !== id) : prev)),
+    )
+  }
+
+  async function skip() {
+    if (!current || busy) return
+    const id = current.id
+    const now = new Date().toISOString()
+    try {
+      await fetch(`/api/items/${id}/skip`, { method: 'POST' })
+    } catch {
+      // Advance anyway; a reload will resync.
+    }
+    fadeThen(() =>
+      setItems((prev) =>
+        prev
+          ? prev.map((i) =>
+              i.id === id ? { ...i, skipped: true, skipped_at: now } : i,
+            )
+          : prev,
+      ),
+    )
   }
 
   return (
@@ -76,6 +113,13 @@ export default function Home() {
               >
                 Add
               </Link>
+              <button
+                onClick={skip}
+                disabled={busy}
+                className="text-[15px] text-neutral-400 transition hover:text-neutral-600 disabled:opacity-40"
+              >
+                Skip
+              </button>
               <button
                 onClick={markDone}
                 disabled={busy}

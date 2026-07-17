@@ -10,6 +10,7 @@ create table if not exists items (
                           check (status in ('active', 'done_today', 'deleted')),
   position    integer     not null default 0,
   completed_at timestamptz,
+  skipped_at  timestamptz,
   created_at  timestamptz not null default now()
 );
 
