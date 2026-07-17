@@ -1,20 +1,30 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 
 export default function DonePage() {
   const [items, setItems] = useState(null)
+  const [buckets, setBuckets] = useState([])
 
   useEffect(() => {
     load()
   }, [])
 
   async function load() {
-    const res = await fetch('/api/items/done', { cache: 'no-store' })
-    const data = await res.json()
-    setItems(data.items || [])
+    const [ri, rb] = await Promise.all([
+      fetch('/api/items/done', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+    ])
+    setItems(ri.items || [])
+    setBuckets(rb.buckets || [])
   }
+
+  const bucketNameById = useMemo(() => {
+    const m = new Map()
+    for (const b of buckets) m.set(b.id, b.name)
+    return m
+  }, [buckets])
 
   function removeLocal(id) {
     setItems((prev) => (prev ? prev.filter((i) => i.id !== id) : prev))
@@ -37,7 +47,12 @@ export default function DonePage() {
         ) : (
           <ul className="flex flex-col">
             {items.map((item) => (
-              <DoneRow key={item.id} item={item} onDeleted={removeLocal} />
+              <DoneRow
+                key={item.id}
+                item={item}
+                bucketName={bucketNameById.get(item.bucket_id) || 'Uncategorized'}
+                onDeleted={removeLocal}
+              />
             ))}
           </ul>
         )}
@@ -46,7 +61,7 @@ export default function DonePage() {
   )
 }
 
-function DoneRow({ item, onDeleted }) {
+function DoneRow({ item, bucketName, onDeleted }) {
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -63,9 +78,12 @@ function DoneRow({ item, onDeleted }) {
 
   return (
     <li className="flex items-center gap-4 border-b border-neutral-100 py-4">
-      <span className="flex-1 text-[17px] font-light text-neutral-500 line-through decoration-neutral-300">
-        {item.name}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[17px] font-light text-neutral-500 line-through decoration-neutral-300">
+          {item.name}
+        </div>
+        <div className="truncate text-xs text-neutral-300">{bucketName}</div>
+      </div>
       {item.type === 'evergreen' ? (
         <span className="text-xs uppercase tracking-wide text-neutral-300">
           Today

@@ -333,9 +333,9 @@ function SortableTile({ item, bucketName, onToggleType, onRename }) {
             {item.name}
           </button>
         )}
-        {bucketName ? (
-          <div className="truncate text-xs text-neutral-400">{bucketName}</div>
-        ) : null}
+        <div className="truncate text-xs text-neutral-400">
+          {bucketName || 'Uncategorized'}
+        </div>
       </div>
       <TypeToggle
         type={item.type}

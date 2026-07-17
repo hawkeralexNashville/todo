@@ -125,11 +125,9 @@ export default function Home() {
             <h1 className="max-w-2xl text-4xl font-light leading-tight tracking-tight text-neutral-800 sm:text-5xl">
               {current.name}
             </h1>
-            {bucketNameById.get(current.bucket_id) ? (
-              <p className="mt-3 text-xs uppercase tracking-widest text-neutral-400">
-                {bucketNameById.get(current.bucket_id)}
-              </p>
-            ) : null}
+            <p className="mt-3 text-xs uppercase tracking-widest text-neutral-400">
+              {bucketNameById.get(current.bucket_id) || 'Uncategorized'}
+            </p>
             <div className="mt-10 flex items-center justify-center gap-6">
               <Link
                 href="/add"

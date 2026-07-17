@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('items')
-    .select('id, name, type, status, completed_at')
+    .select('id, name, type, status, bucket_id, completed_at')
     .in('status', ['deleted', 'done_today'])
     .order('completed_at', { ascending: false })
 
