@@ -78,13 +78,22 @@ export default function Home() {
     <main className="relative min-h-dvh bg-canvas">
       {/* Unobtrusive top-corner controls */}
       <nav className="absolute inset-x-0 top-0 flex items-center justify-between px-5 py-4 text-neutral-300">
-        <Link
-          href="/reorder"
-          aria-label="Reorder"
-          className="p-1 transition hover:text-neutral-500"
-        >
-          <ReorderGlyph />
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/reorder"
+            aria-label="Reorder"
+            className="p-1 transition hover:text-neutral-500"
+          >
+            <ReorderGlyph />
+          </Link>
+          <Link
+            href="/organize"
+            aria-label="Organize buckets"
+            className="p-1 transition hover:text-neutral-500"
+          >
+            <OrganizeGlyph />
+          </Link>
+        </div>
         <Link
           href="/done"
           aria-label="Done items"
@@ -153,6 +162,15 @@ function ReorderGlyph() {
       <line x1="4" y1="6" x2="16" y2="6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       <line x1="4" y1="10" x2="16" y2="10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
       <line x1="4" y1="14" x2="16" y2="14" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function OrganizeGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="4" y="4" width="12" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+      <rect x="4" y="11.5" width="12" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
     </svg>
   )
 }

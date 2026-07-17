@@ -15,7 +15,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('items')
-    .select('id, name, type, status, position, completed_at, created_at, skipped_at')
+    .select('id, name, type, status, position, bucket_id, completed_at, created_at, skipped_at')
     .eq('status', 'active')
     .order('position', { ascending: true })
 
@@ -55,6 +55,14 @@ export async function POST(req) {
     return NextResponse.json({ error: 'Invalid type.' }, { status: 400 })
   }
 
+  let bucketId = null
+  if ('bucket_id' in body && body.bucket_id !== null) {
+    if (!Number.isInteger(body.bucket_id)) {
+      return NextResponse.json({ error: 'Invalid bucket.' }, { status: 400 })
+    }
+    bucketId = body.bucket_id
+  }
+
   // Append to the bottom: one past the current max active position.
   const { data: last } = await supabase
     .from('items')
@@ -68,7 +76,7 @@ export async function POST(req) {
 
   const { data, error } = await supabase
     .from('items')
-    .insert({ name, type, status: 'active', position })
+    .insert({ name, type, status: 'active', position, bucket_id: bucketId })
     .select()
     .single()
 

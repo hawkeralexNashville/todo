@@ -4,8 +4,9 @@ import { getSupabase } from '@/lib/supabase'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-// PATCH /api/items/:id  body: { type: 'one_off' | 'evergreen' }
-// Change an item's type (to fix a mistake made when adding it).
+// PATCH /api/items/:id  body may include:
+//   type:      'one_off' | 'evergreen'   (fix a mistake made when adding)
+//   bucket_id: integer | null            (move to a bucket, or Uncategorized)
 export async function PATCH(req, { params }) {
   const supabase = getSupabase()
   const { id } = await params
@@ -17,15 +18,27 @@ export async function PATCH(req, { params }) {
     body = {}
   }
 
-  const type = body.type
-  if (type !== 'one_off' && type !== 'evergreen') {
-    return NextResponse.json({ error: 'Invalid type.' }, { status: 400 })
+  const updates = {}
+
+  if ('type' in body) {
+    if (body.type !== 'one_off' && body.type !== 'evergreen') {
+      return NextResponse.json({ error: 'Invalid type.' }, { status: 400 })
+    }
+    updates.type = body.type
   }
 
-  const { error } = await supabase
-    .from('items')
-    .update({ type })
-    .eq('id', id)
+  if ('bucket_id' in body) {
+    if (body.bucket_id !== null && !Number.isInteger(body.bucket_id)) {
+      return NextResponse.json({ error: 'Invalid bucket.' }, { status: 400 })
+    }
+    updates.bucket_id = body.bucket_id
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
+  }
+
+  const { error } = await supabase.from('items').update(updates).eq('id', id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

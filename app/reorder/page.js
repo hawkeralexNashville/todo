@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -21,6 +21,7 @@ import { CSS } from '@dnd-kit/utilities'
 export default function ReorderPage() {
   const router = useRouter()
   const [items, setItems] = useState(null)
+  const [buckets, setBuckets] = useState([])
   const [busy, setBusy] = useState(false)
 
   const sensors = useSensors(
@@ -28,10 +29,20 @@ export default function ReorderPage() {
   )
 
   useEffect(() => {
-    fetch('/api/items', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => setItems(d.items || []))
+    Promise.all([
+      fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+    ]).then(([ri, rb]) => {
+      setItems(ri.items || [])
+      setBuckets(rb.buckets || [])
+    })
   }, [])
+
+  const bucketNameById = useMemo(() => {
+    const m = new Map()
+    for (const b of buckets) m.set(b.id, b.name)
+    return m
+  }, [buckets])
 
   function onDragEnd(event) {
     const { active, over } = event
@@ -92,6 +103,12 @@ export default function ReorderPage() {
         >
           Cancel
         </Link>
+        <Link
+          href="/organize"
+          className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+        >
+          Organize
+        </Link>
         <button
           onClick={save}
           disabled={busy || !items || items.length === 0}
@@ -119,6 +136,7 @@ export default function ReorderPage() {
                   <SortableTile
                     key={item.id}
                     item={item}
+                    bucketName={bucketNameById.get(item.bucket_id) || null}
                     onToggleType={toggleType}
                   />
                 ))}
@@ -131,7 +149,7 @@ export default function ReorderPage() {
   )
 }
 
-function SortableTile({ item, onToggleType }) {
+function SortableTile({ item, bucketName, onToggleType }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: item.id })
 
@@ -159,9 +177,12 @@ function SortableTile({ item, onToggleType }) {
       >
         <GripGlyph />
       </button>
-      <span className="min-w-0 flex-1 truncate text-[17px] font-light">
-        {item.name}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[17px] font-light">{item.name}</div>
+        {bucketName ? (
+          <div className="truncate text-xs text-neutral-400">{bucketName}</div>
+        ) : null}
+      </div>
       <TypeToggle
         type={item.type}
         onChange={(next) => onToggleType(item.id, next)}

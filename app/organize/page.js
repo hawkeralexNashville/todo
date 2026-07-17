@@ -1,0 +1,316 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+
+const UNCATEGORIZED = 'sec-none'
+
+export default function OrganizePage() {
+  const [items, setItems] = useState(null)
+  const [buckets, setBuckets] = useState([])
+  const [activeId, setActiveId] = useState(null)
+  const [newOpen, setNewOpen] = useState(false)
+  const [newName, setNewName] = useState('')
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+
+  useEffect(() => {
+    load()
+  }, [])
+
+  async function load() {
+    const [ri, rb] = await Promise.all([
+      fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+    ])
+    setItems(ri.items || [])
+    setBuckets(rb.buckets || [])
+  }
+
+  // One section per bucket, plus an Uncategorized section at the end.
+  const sections = useMemo(() => {
+    const list = buckets.map((b) => ({
+      key: `sec-${b.id}`,
+      bucketId: b.id,
+      name: b.name,
+      items: (items || []).filter((i) => i.bucket_id === b.id),
+    }))
+    list.push({
+      key: UNCATEGORIZED,
+      bucketId: null,
+      name: 'Uncategorized',
+      items: (items || []).filter((i) => i.bucket_id == null),
+    })
+    return list
+  }, [buckets, items])
+
+  const activeItem =
+    activeId != null ? (items || []).find((i) => i.id === activeId) : null
+
+  async function onDragEnd(event) {
+    setActiveId(null)
+    const { active, over } = event
+    if (!over) return
+
+    const itemId = active.id
+    const newBucketId =
+      over.id === UNCATEGORIZED ? null : Number(String(over.id).slice(4))
+
+    const item = (items || []).find((i) => i.id === itemId)
+    if (!item) return
+    if ((item.bucket_id ?? null) === (newBucketId ?? null)) return
+
+    const prevBucketId = item.bucket_id ?? null
+    setItems((prev) =>
+      prev.map((i) => (i.id === itemId ? { ...i, bucket_id: newBucketId } : i)),
+    )
+    try {
+      await fetch(`/api/items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bucket_id: newBucketId }),
+      })
+    } catch {
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === itemId ? { ...i, bucket_id: prevBucketId } : i,
+        ),
+      )
+    }
+  }
+
+  async function createBucket(e) {
+    e.preventDefault()
+    const name = newName.trim()
+    if (!name) return
+    setNewName('')
+    setNewOpen(false)
+    try {
+      const res = await fetch('/api/buckets', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json()
+      if (data.bucket) setBuckets((prev) => [...prev, data.bucket])
+    } catch {
+      // ignore
+    }
+  }
+
+  async function deleteBucket(bucketId) {
+    setBuckets((prev) => prev.filter((b) => b.id !== bucketId))
+    setItems((prev) =>
+      prev ? prev.map((i) => (i.bucket_id === bucketId ? { ...i, bucket_id: null } : i)) : prev,
+    )
+    try {
+      await fetch(`/api/buckets/${bucketId}`, { method: 'DELETE' })
+    } catch {
+      // ignore
+    }
+  }
+
+  return (
+    <main className="relative min-h-dvh bg-canvas">
+      <nav className="sticky top-0 z-10 flex items-center justify-between bg-canvas/90 px-5 py-4 backdrop-blur">
+        <Link
+          href="/"
+          className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+        >
+          Back
+        </Link>
+        <Link
+          href="/reorder"
+          className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+        >
+          Priority
+        </Link>
+      </nav>
+
+      <div className="mx-auto w-full max-w-md px-6 pb-24 pt-2">
+        {items === null ? null : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={pointerWithin}
+            onDragStart={(e) => setActiveId(e.active.id)}
+            onDragEnd={onDragEnd}
+            onDragCancel={() => setActiveId(null)}
+          >
+            <div className="flex flex-col gap-7">
+              {sections.map((sec) => (
+                <BucketSection
+                  key={sec.key}
+                  section={sec}
+                  activeId={activeId}
+                  onDelete={
+                    sec.bucketId != null
+                      ? () => deleteBucket(sec.bucketId)
+                      : null
+                  }
+                />
+              ))}
+            </div>
+
+            <DragOverlay>
+              {activeItem ? (
+                <div className="rounded-xl bg-white px-4 py-3 text-[16px] font-light text-neutral-800 shadow-md">
+                  {activeItem.name}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+
+        {newOpen ? (
+          <form onSubmit={createBucket} className="mt-8 flex items-center gap-3">
+            <input
+              autoFocus
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Bucket name"
+              className="flex-1 border-0 border-b border-neutral-200 bg-transparent pb-1 text-[15px] text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
+            />
+            <button
+              type="submit"
+              disabled={!newName.trim()}
+              className="text-[15px] text-blue-500 disabled:opacity-30"
+            >
+              Add
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setNewOpen(false)
+                setNewName('')
+              }}
+              className="text-[15px] text-neutral-300"
+            >
+              Cancel
+            </button>
+          </form>
+        ) : (
+          <button
+            onClick={() => setNewOpen(true)}
+            className="mt-8 text-[15px] text-blue-500 transition hover:text-blue-600"
+          >
+            + New bucket
+          </button>
+        )}
+      </div>
+    </main>
+  )
+}
+
+function BucketSection({ section, activeId, onDelete }) {
+  const { setNodeRef, isOver } = useDroppable({ id: section.key })
+  const [confirming, setConfirming] = useState(false)
+
+  return (
+    <section>
+      <div className="mb-2 flex items-center justify-between px-1">
+        <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+          {section.name}
+        </h2>
+        {onDelete ? (
+          confirming ? (
+            <span className="flex items-center gap-3 text-xs">
+              <button
+                onClick={onDelete}
+                className="text-red-400 transition hover:text-red-500"
+              >
+                Delete
+              </button>
+              <button
+                onClick={() => setConfirming(false)}
+                className="text-neutral-300 transition hover:text-neutral-500"
+              >
+                No
+              </button>
+            </span>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              aria-label="Delete bucket"
+              className="text-lg leading-none text-neutral-300 transition hover:text-red-400"
+            >
+              ×
+            </button>
+          )
+        ) : null}
+      </div>
+
+      <div
+        ref={setNodeRef}
+        className={
+          'flex min-h-[52px] flex-col gap-2 rounded-xl p-1 transition-colors ' +
+          (isOver ? 'bg-blue-50' : 'bg-neutral-50')
+        }
+      >
+        {section.items.length === 0 ? (
+          <p className="px-3 py-4 text-center text-sm text-neutral-300">
+            Drag items here
+          </p>
+        ) : (
+          section.items.map((item) => (
+            <DraggableItem
+              key={item.id}
+              item={item}
+              dimmed={activeId === item.id}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  )
+}
+
+function DraggableItem({ item, dimmed }) {
+  const { setNodeRef, listeners, attributes } = useDraggable({ id: item.id })
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={
+        'flex cursor-grab touch-none select-none items-center rounded-xl bg-white px-4 py-3 text-[16px] font-light text-neutral-800 shadow-sm active:cursor-grabbing ' +
+        (dimmed ? 'opacity-30' : '')
+      }
+    >
+      <span className="mr-3 text-neutral-300" aria-hidden="true">
+        <GripGlyph />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{item.name}</span>
+      {item.type === 'evergreen' ? (
+        <span className="ml-2 text-[10px] uppercase tracking-wide text-neutral-300">
+          Evergreen
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
+function GripGlyph() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <circle cx="6" cy="4" r="1" />
+      <circle cx="10" cy="4" r="1" />
+      <circle cx="6" cy="8" r="1" />
+      <circle cx="10" cy="8" r="1" />
+      <circle cx="6" cy="12" r="1" />
+      <circle cx="10" cy="12" r="1" />
+    </svg>
+  )
+}

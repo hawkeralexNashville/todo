@@ -2,6 +2,14 @@
 -- Paste this into the Supabase SQL editor (Database -> SQL Editor -> New query)
 -- and run it once.
 
+-- Buckets are optional labels items can be filed under. They do not affect
+-- priority order; an item's position is individual and global.
+create table if not exists buckets (
+  id         bigint generated always as identity primary key,
+  name       text        not null,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists items (
   id          bigint generated always as identity primary key,
   name        text        not null,
@@ -9,6 +17,7 @@ create table if not exists items (
   status      text        not null default 'active'
                           check (status in ('active', 'done_today', 'deleted')),
   position    integer     not null default 0,
+  bucket_id   bigint      references buckets (id) on delete set null,
   completed_at timestamptz,
   skipped_at  timestamptz,
   created_at  timestamptz not null default now()
@@ -28,4 +37,5 @@ create table if not exists app_meta (
 -- so that the public anon key (if it were ever used from a browser) has no
 -- access at all.
 alter table items enable row level security;
+alter table buckets enable row level security;
 alter table app_meta enable row level security;
