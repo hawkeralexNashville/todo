@@ -532,7 +532,7 @@ function BucketSection({
   const [draft, setDraft] = useState(section.name)
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newType, setNewType] = useState('one_off')
+  const [newType, setNewType] = useState('evergreen')
 
   function commitRename() {
     setEditing(false)
@@ -763,8 +763,16 @@ function BacklogTile({
             }}
             className="w-full border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-[15px] font-light text-neutral-800 outline-none"
           />
-          <div className="mt-2">
+          <div className="mt-2 flex items-center justify-between">
             <MiniTypeToggle type={item.type} onChange={(t) => onToggleType(item.id, t)} />
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={commit}
+              className="ml-3 shrink-0 text-[13px] text-blue-500 transition hover:text-blue-600"
+            >
+              Done
+            </button>
           </div>
         </div>
       ) : (
