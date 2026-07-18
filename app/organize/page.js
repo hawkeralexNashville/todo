@@ -721,11 +721,9 @@ function BacklogTile({
         <span className="min-w-0 flex-1 truncate text-[15px] font-light text-neutral-500 line-through decoration-neutral-400">
           {item.name}
         </span>
-        {item.type === 'evergreen' ? (
-          <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-green-700">
-            Evergreen
-          </span>
-        ) : null}
+        <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-green-700">
+          {item.type === 'evergreen' ? 'Evergreen' : 'One-off'}
+        </span>
       </div>
     )
   }
@@ -799,11 +797,9 @@ function BacklogTile({
               </button>
             </div>
           </div>
-          {item.type === 'evergreen' ? (
-            <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
-              Evergreen
-            </span>
-          ) : null}
+          <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
+            {item.type === 'evergreen' ? 'Evergreen' : 'One-off'}
+          </span>
           {confirming ? (
             <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs">
               <button
@@ -917,6 +913,10 @@ function MiniType({ active, onClick, children }) {
   return (
     <button
       type="button"
+      // Without this, clicking the button blurs the name input first, which
+      // commits/closes the editor (see BacklogTile.commit) before the click
+      // itself can fire — so the toggle silently does nothing.
+      onMouseDown={(e) => e.preventDefault()}
       onClick={onClick}
       className={
         'whitespace-nowrap rounded-full px-2.5 py-1 transition ' +
