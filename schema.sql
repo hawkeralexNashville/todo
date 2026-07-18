@@ -13,6 +13,7 @@ create table if not exists buckets (
 create table if not exists items (
   id          bigint generated always as identity primary key,
   name        text        not null,
+  description text,
   type        text        not null check (type in ('one_off', 'evergreen')),
   status      text        not null default 'active'
                           check (status in ('active', 'done_today', 'deleted')),

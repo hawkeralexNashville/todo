@@ -19,6 +19,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import Modal from '@/components/Modal'
 
 const PRIORITY = 'priority'
 const UNCATEGORIZED = 'bucket-none'
@@ -29,6 +30,8 @@ export default function OrganizePage() {
   const [activeDragId, setActiveDragId] = useState(null)
   const [newOpen, setNewOpen] = useState(false)
   const [newBucketName, setNewBucketName] = useState('')
+  const [detailItem, setDetailItem] = useState(null)
+  const [detailDraft, setDetailDraft] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -195,6 +198,17 @@ export default function OrganizePage() {
   const toggleType = (id, type) => patchItem(id, { type })
   const renameItem = (id, name) => patchItem(id, { name })
 
+  function openDetail(item) {
+    setDetailItem(item)
+    setDetailDraft(item.description || '')
+  }
+
+  function saveDetail() {
+    if (!detailItem) return
+    patchItem(detailItem.id, { description: detailDraft.trim() || null })
+    setDetailItem(null)
+  }
+
   async function deleteItem(id) {
     const prev = items
     setItems((list) => (list ? list.filter((i) => i.id !== id) : list))
@@ -315,6 +329,7 @@ export default function OrganizePage() {
                       onToggleType={toggleType}
                       onDeleteItem={deleteItem}
                       onAddToList={addToPriority}
+                      onOpenDetail={openDetail}
                       onDelete={
                         sec.bucketId != null ? () => deleteBucket(sec.bucketId) : null
                       }
@@ -403,6 +418,38 @@ export default function OrganizePage() {
           </DndContext>
         )}
       </div>
+
+      <Modal open={detailItem !== null} onClose={() => setDetailItem(null)}>
+        {detailItem ? (
+          <div>
+            <p className="mb-3 text-[15px] font-light text-neutral-800">
+              {detailItem.name}
+            </p>
+            <textarea
+              autoFocus
+              rows={7}
+              value={detailDraft}
+              onChange={(e) => setDetailDraft(e.target.value)}
+              placeholder="Add a longer description…"
+              className="w-full resize-none rounded-lg border border-neutral-200 bg-transparent p-3 text-[15px] font-light text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
+            />
+            <div className="mt-4 flex items-center justify-end gap-4">
+              <button
+                onClick={() => setDetailItem(null)}
+                className="text-[15px] text-neutral-400 transition hover:text-neutral-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveDetail}
+                className="text-[15px] text-blue-500 transition hover:text-blue-600"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </main>
   )
 }
@@ -475,6 +522,7 @@ function BucketSection({
   onToggleType,
   onDeleteItem,
   onAddToList,
+  onOpenDetail,
   onDelete,
   onRename,
 }) {
@@ -584,6 +632,7 @@ function BucketSection({
               onToggleType={onToggleType}
               onDelete={onDeleteItem}
               onAddToList={onAddToList}
+              onOpenDetail={onOpenDetail}
             />
           ))
         )}
@@ -642,7 +691,15 @@ function BucketSection({
 // LEFT tile: draggable. Turns light green once queued; turns solid green with
 // a checkmark once completed today (read-only — editing/deleting a finished
 // item belongs on the Done screen).
-function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToList }) {
+function BacklogTile({
+  item,
+  dimmed,
+  onRename,
+  onToggleType,
+  onDelete,
+  onAddToList,
+  onOpenDetail,
+}) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.name)
@@ -714,28 +771,38 @@ function BacklogTile({ item, dimmed, onRename, onToggleType, onDelete, onAddToLi
         </div>
       ) : (
         <>
-          <button
-            onClick={() => {
-              setDraft(item.name)
-              setEditing(true)
-            }}
-            aria-label="Rename item"
-            className="min-w-0 flex-1 truncate text-left text-[15px] font-light text-neutral-800"
-          >
-            {item.name}
-          </button>
+          <div className="min-w-0 flex-1">
+            <button
+              onClick={() => {
+                setDraft(item.name)
+                setEditing(true)
+              }}
+              aria-label="Rename item"
+              className="block w-full truncate text-left text-[15px] font-light text-neutral-800"
+            >
+              {item.name}
+            </button>
+            <div className="mt-0.5 flex items-center gap-3">
+              {!item.prioritized ? (
+                <button
+                  onClick={() => onAddToList(item.id)}
+                  className="whitespace-nowrap text-[11px] text-blue-500 transition hover:text-blue-600"
+                >
+                  Add to list
+                </button>
+              ) : null}
+              <button
+                onClick={() => onOpenDetail(item)}
+                className="whitespace-nowrap text-[11px] text-neutral-400 transition hover:text-blue-500"
+              >
+                {item.description ? 'Edit detail' : 'Add detail'}
+              </button>
+            </div>
+          </div>
           {item.type === 'evergreen' ? (
             <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
               Evergreen
             </span>
-          ) : null}
-          {!item.prioritized ? (
-            <button
-              onClick={() => onAddToList(item.id)}
-              className="ml-2 shrink-0 whitespace-nowrap text-[11px] text-blue-500 transition hover:text-blue-600"
-            >
-              Add to list
-            </button>
           ) : null}
           {confirming ? (
             <span className="ml-2 flex shrink-0 items-center gap-1.5 text-xs">

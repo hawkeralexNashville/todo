@@ -32,7 +32,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from('items')
-    .select('id, name, type, status, position, prioritized, bucket_id, completed_at, created_at, skipped_at')
+    .select('id, name, description, type, status, position, prioritized, bucket_id, completed_at, created_at, skipped_at')
     .or(`status.eq.active,status.eq.done_today,and(status.eq.deleted,completed_at.gte.${cutoff})`)
     .order('position', { ascending: true })
 

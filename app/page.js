@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import Modal from '@/components/Modal'
 
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
@@ -9,6 +10,7 @@ export default function Home() {
   const [summary, setSummary] = useState(null) // { total, completed } for today
   const [exiting, setExiting] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [showDetail, setShowDetail] = useState(false)
 
   useEffect(() => {
     load()
@@ -54,6 +56,7 @@ export default function Home() {
       update()
       setExiting(false)
       setBusy(false)
+      setShowDetail(false) // next item starts collapsed
     }, 220)
   }
 
@@ -126,6 +129,14 @@ export default function Home() {
             <p className="mt-3 text-xs uppercase tracking-widest text-neutral-400">
               {bucketNameById.get(current.bucket_id) || 'Uncategorized'}
             </p>
+            {current.description ? (
+              <button
+                onClick={() => setShowDetail(true)}
+                className="mt-2 text-xs text-blue-500 transition hover:text-blue-600"
+              >
+                Detail
+              </button>
+            ) : null}
             <div className="mt-10 flex items-center justify-center gap-3">
               <Link
                 href="/add"
@@ -175,6 +186,27 @@ export default function Home() {
           {summary.completed}/{summary.total} complete
         </p>
       ) : null}
+
+      <Modal open={showDetail} onClose={() => setShowDetail(false)}>
+        {current ? (
+          <div>
+            <p className="mb-3 text-[15px] font-light text-neutral-800">
+              {current.name}
+            </p>
+            <p className="whitespace-pre-wrap text-[15px] font-light leading-relaxed text-neutral-600">
+              {current.description}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setShowDetail(false)}
+                className="text-[15px] text-blue-500 transition hover:text-blue-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </main>
   )
 }

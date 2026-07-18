@@ -5,9 +5,10 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 // PATCH /api/items/:id  body may include:
-//   name:      string                    (rename the item)
-//   type:      'one_off' | 'evergreen'   (fix a mistake made when adding)
-//   bucket_id: integer | null            (move to a bucket, or Uncategorized)
+//   name:        string                    (rename the item)
+//   type:        'one_off' | 'evergreen'   (fix a mistake made when adding)
+//   bucket_id:   integer | null            (move to a bucket, or Uncategorized)
+//   description: string | null             (long-form detail; empty clears it)
 export async function PATCH(req, { params }) {
   const supabase = getSupabase()
   const { id } = await params
@@ -41,6 +42,11 @@ export async function PATCH(req, { params }) {
       return NextResponse.json({ error: 'Invalid bucket.' }, { status: 400 })
     }
     updates.bucket_id = body.bucket_id
+  }
+
+  if ('description' in body) {
+    const description = typeof body.description === 'string' ? body.description.trim() : ''
+    updates.description = description || null
   }
 
   if (Object.keys(updates).length === 0) {
