@@ -13,7 +13,7 @@ export async function POST(_req, { params }) {
 
   const { data: item, error: fetchError } = await supabase
     .from('items')
-    .select('id, type, status')
+    .select('id, type, status, time_spent, timer_started_at')
     .eq('id', id)
     .maybeSingle()
 
@@ -26,10 +26,19 @@ export async function POST(_req, { params }) {
 
   const newStatus = item.type === 'evergreen' ? 'done_today' : 'deleted'
 
-  const { error } = await supabase
-    .from('items')
-    .update({ status: newStatus, completed_at: new Date().toISOString() })
-    .eq('id', id)
+  const updates = {
+    status: newStatus,
+    completed_at: new Date().toISOString(),
+  }
+  // Finalize a running timer so the last segment is captured in time_spent.
+  if (item.timer_started_at) {
+    const startMs = new Date(item.timer_started_at).getTime()
+    const extra = Math.max(0, Math.floor((Date.now() - startMs) / 1000))
+    updates.time_spent = (item.time_spent || 0) + extra
+    updates.timer_started_at = null
+  }
+
+  const { error } = await supabase.from('items').update(updates).eq('id', id)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })

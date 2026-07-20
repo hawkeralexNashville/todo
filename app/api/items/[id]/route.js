@@ -49,6 +49,14 @@ export async function PATCH(req, { params }) {
     updates.description = description || null
   }
 
+  if ('time_estimate' in body) {
+    const est = body.time_estimate
+    if (est !== null && (!Number.isInteger(est) || est <= 0)) {
+      return NextResponse.json({ error: 'Invalid estimate.' }, { status: 400 })
+    }
+    updates.time_estimate = est
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 })
   }

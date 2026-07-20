@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { parseEstimate } from '@/lib/time'
 
 export default function AddPage() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [type, setType] = useState('one_off')
+  const [estimate, setEstimate] = useState('')
   const [busy, setBusy] = useState(false)
 
   const [buckets, setBuckets] = useState([])
@@ -53,7 +55,12 @@ export default function AddPage() {
       await fetch('/api/items', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: trimmed, type, bucket_id: bucketId }),
+        body: JSON.stringify({
+          name: trimmed,
+          type,
+          bucket_id: bucketId,
+          time_estimate: parseEstimate(estimate),
+        }),
       })
       // New items land in the backlog, so go to Organize to see/queue them.
       router.push('/organize')
@@ -97,6 +104,18 @@ export default function AddPage() {
             >
               Evergreen
             </TypeButton>
+          </div>
+
+          <div className="mt-6 flex items-center gap-2 text-sm text-neutral-400">
+            <span>Estimate</span>
+            <input
+              value={estimate}
+              onChange={(e) => setEstimate(e.target.value)}
+              placeholder="0:30"
+              inputMode="numeric"
+              aria-label="Time estimate"
+              className="w-16 rounded-full bg-neutral-100 px-3 py-1 text-center tabular-nums text-neutral-700 outline-none placeholder:text-neutral-400"
+            />
           </div>
 
           {/* Bucket picker (optional). */}

@@ -20,6 +20,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import Modal from '@/components/Modal'
+import { parseEstimate, formatDuration, elapsedSeconds } from '@/lib/time'
 
 const PRIORITY = 'priority'
 const UNCATEGORIZED = 'bucket-none'
@@ -32,6 +33,7 @@ export default function OrganizePage() {
   const [newBucketName, setNewBucketName] = useState('')
   const [detailItem, setDetailItem] = useState(null)
   const [detailDraft, setDetailDraft] = useState('')
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -70,6 +72,17 @@ export default function OrganizePage() {
         .sort((a, b) => a.position - b.position),
     [items],
   )
+
+  // Keep the "spent" total live if any queued item's timer is running.
+  const anyRunning = priorityItems.some((i) => i.timer_started_at)
+  useEffect(() => {
+    if (!anyRunning) return
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [anyRunning])
+
+  const totalPlanned = priorityItems.reduce((s, i) => s + (i.time_estimate || 0), 0)
+  const totalSpent = priorityItems.reduce((s, i) => s + elapsedSeconds(i, nowMs), 0)
 
   // Left column: every active item, grouped by category (nothing is removed
   // when prioritized — those tiles just turn green).
@@ -197,6 +210,7 @@ export default function OrganizePage() {
 
   const toggleType = (id, type) => patchItem(id, { type })
   const renameItem = (id, name) => patchItem(id, { name })
+  const setEstimate = (id, seconds) => patchItem(id, { time_estimate: seconds })
 
   function openDetail(item) {
     setDetailItem(item)
@@ -219,14 +233,19 @@ export default function OrganizePage() {
     }
   }
 
-  async function addItem(bucketId, name, type) {
+  async function addItem(bucketId, name, type, timeEstimate) {
     const trimmed = name.trim()
     if (!trimmed) return
     try {
       const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: trimmed, type, bucket_id: bucketId }),
+        body: JSON.stringify({
+          name: trimmed,
+          type,
+          bucket_id: bucketId,
+          time_estimate: timeEstimate ?? null,
+        }),
       })
       const data = await res.json()
       if (data.item) setItems((prev) => (prev ? [...prev, data.item] : [data.item]))
@@ -324,9 +343,10 @@ export default function OrganizePage() {
                       section={sec}
                       activeDragId={activeDragId}
                       bucketNameById={bucketNameById}
-                      onAdd={(name, type) => addItem(sec.bucketId, name, type)}
+                      onAdd={(name, type, est) => addItem(sec.bucketId, name, type, est)}
                       onRenameItem={renameItem}
                       onToggleType={toggleType}
+                      onSetEstimate={setEstimate}
                       onDeleteItem={deleteItem}
                       onAddToList={addToPriority}
                       onOpenDetail={openDetail}
@@ -381,9 +401,16 @@ export default function OrganizePage() {
 
               {/* RIGHT: priority queue */}
               <div>
-                <h2 className="mb-3 px-1 text-xs uppercase tracking-widest text-neutral-400">
-                  Priority
-                </h2>
+                <div className="mb-3 flex items-baseline justify-between px-1">
+                  <h2 className="text-xs uppercase tracking-widest text-neutral-400">
+                    Priority
+                  </h2>
+                  {totalPlanned > 0 ? (
+                    <span className="text-xs tabular-nums text-neutral-400">
+                      {formatDuration(totalSpent)} / {formatDuration(totalPlanned)}
+                    </span>
+                  ) : null}
+                </div>
                 <PriorityDroppable>
                   <SortableContext
                     items={priorityItems.map((i) => `p-${i.id}`)}
@@ -520,6 +547,7 @@ function BucketSection({
   onAdd,
   onRenameItem,
   onToggleType,
+  onSetEstimate,
   onDeleteItem,
   onAddToList,
   onOpenDetail,
@@ -533,6 +561,7 @@ function BucketSection({
   const [adding, setAdding] = useState(false)
   const [newName, setNewName] = useState('')
   const [newType, setNewType] = useState('evergreen')
+  const [newEstimate, setNewEstimate] = useState('')
 
   function commitRename() {
     setEditing(false)
@@ -545,8 +574,9 @@ function BucketSection({
     e.preventDefault()
     const trimmed = newName.trim()
     if (!trimmed) return
-    onAdd(trimmed, newType)
+    onAdd(trimmed, newType, parseEstimate(newEstimate))
     setNewName('')
+    setNewEstimate('')
   }
 
   return (
@@ -630,6 +660,7 @@ function BucketSection({
               dimmed={activeDragId === `b-${item.id}`}
               onRename={onRenameItem}
               onToggleType={onToggleType}
+              onSetEstimate={onSetEstimate}
               onDelete={onDeleteItem}
               onAddToList={onAddToList}
               onOpenDetail={onOpenDetail}
@@ -653,9 +684,17 @@ function BucketSection({
             placeholder="New item"
             className="w-full border-0 border-b border-neutral-200 bg-transparent pb-1 text-[15px] font-light text-neutral-800 outline-none placeholder:text-neutral-300 focus:border-neutral-400"
           />
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <MiniTypeToggle type={newType} onChange={setNewType} />
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <input
+                value={newEstimate}
+                onChange={(e) => setNewEstimate(e.target.value)}
+                placeholder="0:30"
+                inputMode="numeric"
+                aria-label="Time estimate"
+                className="w-14 rounded-full bg-neutral-100 px-2.5 py-1 text-center text-[11px] tabular-nums text-neutral-700 outline-none placeholder:text-neutral-400"
+              />
               <button
                 type="submit"
                 disabled={!newName.trim()}
@@ -668,6 +707,7 @@ function BucketSection({
                 onClick={() => {
                   setAdding(false)
                   setNewName('')
+                  setNewEstimate('')
                 }}
                 className="text-sm text-neutral-300 transition hover:text-neutral-500"
               >
@@ -696,6 +736,7 @@ function BacklogTile({
   dimmed,
   onRename,
   onToggleType,
+  onSetEstimate,
   onDelete,
   onAddToList,
   onOpenDetail,
@@ -703,6 +744,7 @@ function BacklogTile({
   const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(item.name)
+  const [estDraft, setEstDraft] = useState(formatDuration(item.time_estimate))
   const [confirming, setConfirming] = useState(false)
 
   function commit() {
@@ -710,7 +752,11 @@ function BacklogTile({
     const trimmed = draft.trim()
     if (trimmed && trimmed !== item.name) onRename(item.id, trimmed)
     else setDraft(item.name)
+    const parsed = parseEstimate(estDraft)
+    if (parsed !== (item.time_estimate ?? null)) onSetEstimate(item.id, parsed)
   }
+
+  const estTag = formatDuration(item.time_estimate)
 
   if (item.done) {
     return (
@@ -721,6 +767,11 @@ function BacklogTile({
         <span className="min-w-0 flex-1 truncate text-[15px] font-light text-neutral-500 line-through decoration-neutral-400">
           {item.name}
         </span>
+        {estTag ? (
+          <span className="ml-2 shrink-0 text-[11px] tabular-nums text-green-700">
+            {estTag}
+          </span>
+        ) : null}
         <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-green-700">
           {item.type === 'evergreen' ? 'Evergreen' : 'One-off'}
         </span>
@@ -753,26 +804,37 @@ function BacklogTile({
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === 'Enter') commit()
               if (e.key === 'Escape') {
                 setDraft(item.name)
+                setEstDraft(formatDuration(item.time_estimate))
                 setEditing(false)
               }
             }}
             className="w-full border-0 border-b border-neutral-300 bg-transparent pb-0.5 text-[15px] font-light text-neutral-800 outline-none"
           />
-          <div className="mt-2 flex items-center justify-between">
+          <div className="mt-2 flex items-center justify-between gap-2">
             <MiniTypeToggle type={item.type} onChange={(t) => onToggleType(item.id, t)} />
-            <button
-              type="button"
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={commit}
-              className="ml-3 shrink-0 text-[13px] text-blue-500 transition hover:text-blue-600"
-            >
-              Done
-            </button>
+            <div className="flex items-center gap-2">
+              <input
+                value={estDraft}
+                onChange={(e) => setEstDraft(e.target.value)}
+                onMouseDown={(e) => e.stopPropagation()}
+                placeholder="0:30"
+                inputMode="numeric"
+                aria-label="Time estimate"
+                className="w-14 rounded-full bg-neutral-100 px-2.5 py-1 text-center text-[11px] tabular-nums text-neutral-700 outline-none placeholder:text-neutral-400"
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={commit}
+                className="shrink-0 text-[13px] text-blue-500 transition hover:text-blue-600"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -805,6 +867,11 @@ function BacklogTile({
               </button>
             </div>
           </div>
+          {estTag ? (
+            <span className="ml-2 shrink-0 text-[11px] tabular-nums text-neutral-400">
+              {estTag}
+            </span>
+          ) : null}
           <span className="ml-2 shrink-0 text-[10px] uppercase tracking-wide text-neutral-400">
             {item.type === 'evergreen' ? 'Evergreen' : 'One-off'}
           </span>
@@ -893,6 +960,16 @@ function PriorityTile({ item, bucketName, onRemove }) {
           {bucketName}
         </div>
       </div>
+      {item.time_estimate ? (
+        <span
+          className={
+            'ml-2 shrink-0 text-[11px] tabular-nums ' +
+            (item.done ? 'text-green-700' : 'text-neutral-400')
+          }
+        >
+          {formatDuration(item.time_estimate)}
+        </span>
+      ) : null}
       <button
         onClick={onRemove}
         aria-label="Remove from priority"

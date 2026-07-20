@@ -22,6 +22,9 @@ create table if not exists items (
   bucket_id   bigint      references buckets (id) on delete set null,
   completed_at timestamptz,
   skipped_at  timestamptz,
+  time_estimate integer,               -- estimated duration, in seconds (nullable)
+  time_spent   integer not null default 0, -- accumulated actual time, in seconds
+  timer_started_at timestamptz,        -- set while the timer is running, else null
   created_at  timestamptz not null default now()
 );
 

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Modal from '@/components/Modal'
+import { formatClock, remainingSeconds } from '@/lib/time'
 
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
@@ -11,6 +12,7 @@ export default function Home() {
   const [exiting, setExiting] = useState(false)
   const [busy, setBusy] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   useEffect(() => {
     load()
@@ -48,6 +50,45 @@ export default function Home() {
   }, [items])
 
   const current = queue.length > 0 ? queue[0] : null
+  const timerRunning = !!(current && current.timer_started_at)
+
+  // Tick once a second while the current item's timer is running.
+  useEffect(() => {
+    if (!timerRunning) return
+    const id = setInterval(() => setNowMs(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [timerRunning])
+
+  // Patch the current item's timer fields locally + persist the action.
+  async function timerAction(action) {
+    if (!current) return
+    const id = current.id
+    setItems((prev) =>
+      prev
+        ? prev.map((i) => {
+            if (i.id !== id) return i
+            if (action === 'start') return { ...i, timer_started_at: new Date().toISOString() }
+            if (action === 'pause') {
+              const start = i.timer_started_at ? new Date(i.timer_started_at).getTime() : null
+              const extra = start ? Math.max(0, Math.floor((Date.now() - start) / 1000)) : 0
+              return { ...i, time_spent: (i.time_spent || 0) + extra, timer_started_at: null }
+            }
+            if (action === 'reset') return { ...i, time_spent: 0, timer_started_at: null }
+            return i
+          })
+        : prev,
+    )
+    setNowMs(Date.now())
+    try {
+      await fetch(`/api/items/${id}/timer`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+    } catch {
+      // best-effort; a reload resyncs
+    }
+  }
 
   function fadeThen(update) {
     setBusy(true)
@@ -137,6 +178,52 @@ export default function Home() {
                 Detail
               </button>
             ) : null}
+
+            {current.time_estimate ? (
+              <div className="mt-8 flex flex-col items-center gap-3">
+                {(() => {
+                  const remaining = remainingSeconds(current, nowMs)
+                  return (
+                    <span
+                      className={
+                        'font-light tabular-nums ' +
+                        (remaining < 0
+                          ? 'text-3xl text-red-400'
+                          : 'text-3xl text-neutral-500')
+                      }
+                    >
+                      {formatClock(remaining)}
+                    </span>
+                  )
+                })()}
+                <div className="flex items-center gap-4">
+                  {timerRunning ? (
+                    <button
+                      onClick={() => timerAction('pause')}
+                      className="rounded-full px-4 py-1.5 text-[13px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
+                    >
+                      Pause
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => timerAction('start')}
+                      className="rounded-full bg-neutral-100 px-4 py-1.5 text-[13px] text-neutral-600 transition hover:bg-neutral-200"
+                    >
+                      Start
+                    </button>
+                  )}
+                  {current.time_spent || current.timer_started_at ? (
+                    <button
+                      onClick={() => timerAction('reset')}
+                      className="text-[13px] text-neutral-300 transition hover:text-neutral-500"
+                    >
+                      Reset
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-10 flex items-center justify-center gap-3">
               <Link
                 href="/add"
