@@ -64,14 +64,20 @@ export default function OrganizePage() {
     return m
   }, [buckets])
 
-  // Right column: the queue Home follows, in order.
+  // Right column: the queue Home follows, in order (locked items pinned first).
   const priorityItems = useMemo(
     () =>
       (items || [])
         .filter((i) => i.prioritized)
-        .sort((a, b) => a.position - b.position),
+        .sort(
+          (a, b) =>
+            (b.locked ? 1 : 0) - (a.locked ? 1 : 0) || a.position - b.position,
+        ),
     [items],
   )
+  const orderedIds = priorityItems.map((i) => i.id)
+  const lockedIds = priorityItems.filter((i) => i.locked).map((i) => i.id)
+  const rankById = new Map(priorityItems.map((i, idx) => [i.id, idx + 1]))
 
   // Keep the "spent" total live if any queued item's timer is running.
   const anyRunning = priorityItems.some((i) => i.timer_started_at)
@@ -111,19 +117,32 @@ export default function OrganizePage() {
 
   // ---- persistence ---------------------------------------------------------
 
-  function setPriority(newIds) {
+  // Persist a new priority order + lock set. Always normalizes so locked items
+  // sit at the top (in their relative order), which is what enforces the
+  // "locked can't be bumped below unlocked" rule regardless of the raw input.
+  function applyOrder(rawIds, lockedList) {
+    const lockedSet = new Set(lockedList)
+    const normalized = [
+      ...rawIds.filter((id) => lockedSet.has(id)),
+      ...rawIds.filter((id) => !lockedSet.has(id)),
+    ]
     setItems((prev) =>
       prev.map((it) => {
-        const idx = newIds.indexOf(it.id)
-        if (idx >= 0) return { ...it, prioritized: true, position: idx }
-        if (it.prioritized) return { ...it, prioritized: false }
+        const idx = normalized.indexOf(it.id)
+        if (idx >= 0) {
+          return { ...it, prioritized: true, position: idx, locked: lockedSet.has(it.id) }
+        }
+        if (it.prioritized || it.locked) return { ...it, prioritized: false, locked: false }
         return it
       }),
     )
     fetch('/api/priority', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ids: newIds }),
+      body: JSON.stringify({
+        ids: normalized,
+        locked: normalized.filter((id) => lockedSet.has(id)),
+      }),
     }).catch(() => {})
   }
 
@@ -139,10 +158,9 @@ export default function OrganizePage() {
   // ---- drag ----------------------------------------------------------------
 
   function priorityIndexOf(overId) {
-    const ids = priorityItems.map((i) => i.id)
-    if (overId === PRIORITY) return ids.length
+    if (overId === PRIORITY) return orderedIds.length
     if (typeof overId === 'string' && overId.startsWith('p-'))
-      return ids.indexOf(Number(overId.slice(2)))
+      return orderedIds.indexOf(Number(overId.slice(2)))
     return -1
   }
 
@@ -157,7 +175,6 @@ export default function OrganizePage() {
     if (!item || item.done) return // finished items are not draggable
 
     const overId = over.id
-    const ids = priorityItems.map((i) => i.id)
     const overIsPriority =
       overId === PRIORITY ||
       (typeof overId === 'string' && overId.startsWith('p-'))
@@ -166,18 +183,17 @@ export default function OrganizePage() {
       // Dragging a left (backlog) tile.
       if (overIsPriority) {
         if (item.prioritized) {
-          // Already queued — reposition it.
-          const from = ids.indexOf(id)
+          const from = orderedIds.indexOf(id)
           let to = priorityIndexOf(overId)
-          if (to < 0) to = ids.length - 1
-          if (from >= 0 && to >= 0 && from !== to) setPriority(arrayMove(ids, from, to))
+          if (to < 0) to = orderedIds.length - 1
+          if (from >= 0 && to >= 0 && from !== to)
+            applyOrder(arrayMove(orderedIds, from, to), lockedIds)
         } else {
-          // Pull into the queue.
           let at = priorityIndexOf(overId)
-          if (at < 0) at = ids.length
-          const newIds = [...ids]
+          if (at < 0) at = orderedIds.length
+          const newIds = [...orderedIds]
           newIds.splice(at, 0, id)
-          setPriority(newIds)
+          applyOrder(newIds, lockedIds)
         }
       } else if (overId === UNCATEGORIZED) {
         if ((item.bucket_id ?? null) !== null) patchItem(id, { bucket_id: null })
@@ -188,22 +204,46 @@ export default function OrganizePage() {
     } else if (activeStr.startsWith('p-')) {
       // Dragging a right (priority) tile — reorder only.
       if (overIsPriority) {
-        const from = ids.indexOf(id)
+        const from = orderedIds.indexOf(id)
         let to = priorityIndexOf(overId)
-        if (to < 0) to = ids.length - 1
-        if (from >= 0 && to >= 0 && from !== to) setPriority(arrayMove(ids, from, to))
+        if (to < 0) to = orderedIds.length - 1
+        if (from >= 0 && to >= 0 && from !== to)
+          applyOrder(arrayMove(orderedIds, from, to), lockedIds)
       }
     }
   }
 
   function unprioritize(id) {
-    setPriority(priorityItems.map((i) => i.id).filter((x) => x !== id))
+    applyOrder(
+      orderedIds.filter((x) => x !== id),
+      lockedIds.filter((x) => x !== id), // removing also unlocks
+    )
   }
 
-  function addToPriority(id) {
-    const ids = priorityItems.map((i) => i.id)
-    if (ids.includes(id)) return
-    setPriority([...ids, id]) // append to the bottom of the queue
+  // Click-to-number: append to the bottom of the queue (or remove if already in).
+  function togglePriority(id) {
+    if (orderedIds.includes(id)) unprioritize(id)
+    else applyOrder([...orderedIds, id], lockedIds)
+  }
+
+  function toggleLock(id) {
+    if (lockedIds.includes(id)) {
+      applyOrder(orderedIds, lockedIds.filter((x) => x !== id)) // unlock, stays queued
+    } else {
+      const base = orderedIds.includes(id) ? orderedIds : [...orderedIds, id]
+      applyOrder(base, [...lockedIds, id]) // lock (and queue if needed)
+    }
+  }
+
+  // ▲/▼ nudge, only within the same lock tier.
+  function move(id, dir) {
+    const i = orderedIds.indexOf(id)
+    const j = i + dir
+    if (i < 0 || j < 0 || j >= orderedIds.length) return
+    const a = itemsById.get(orderedIds[i])
+    const b = itemsById.get(orderedIds[j])
+    if (!!a.locked !== !!b.locked) return // can't cross the locked/unlocked boundary
+    applyOrder(arrayMove(orderedIds, i, j), lockedIds)
   }
 
   // ---- item + bucket actions ----------------------------------------------
@@ -348,7 +388,9 @@ export default function OrganizePage() {
                       onToggleType={toggleType}
                       onSetEstimate={setEstimate}
                       onDeleteItem={deleteItem}
-                      onAddToList={addToPriority}
+                      onTogglePriority={togglePriority}
+                      onToggleLock={toggleLock}
+                      rankById={rankById}
                       onOpenDetail={openDetail}
                       onDelete={
                         sec.bucketId != null ? () => deleteBucket(sec.bucketId) : null
@@ -418,14 +460,22 @@ export default function OrganizePage() {
                   >
                     {priorityItems.length === 0 ? (
                       <p className="px-3 py-6 text-center text-sm text-neutral-300">
-                        Drag items here to queue them
+                        Click a number on the left to queue items
                       </p>
                     ) : (
-                      priorityItems.map((item) => (
+                      priorityItems.map((item, idx) => (
                         <PriorityTile
                           key={item.id}
                           item={item}
+                          rank={idx + 1}
                           bucketName={bucketNameById.get(item.bucket_id) || 'Uncategorized'}
+                          canUp={idx > 0 && !!priorityItems[idx - 1].locked === !!item.locked}
+                          canDown={
+                            idx < priorityItems.length - 1 &&
+                            !!priorityItems[idx + 1].locked === !!item.locked
+                          }
+                          onMove={(dir) => move(item.id, dir)}
+                          onToggleLock={() => toggleLock(item.id)}
                           onRemove={() => unprioritize(item.id)}
                         />
                       ))
@@ -549,7 +599,9 @@ function BucketSection({
   onToggleType,
   onSetEstimate,
   onDeleteItem,
-  onAddToList,
+  onTogglePriority,
+  onToggleLock,
+  rankById,
   onOpenDetail,
   onDelete,
   onRename,
@@ -658,11 +710,13 @@ function BucketSection({
               key={item.id}
               item={item}
               dimmed={activeDragId === `b-${item.id}`}
+              rank={rankById.get(item.id) || null}
               onRename={onRenameItem}
               onToggleType={onToggleType}
               onSetEstimate={onSetEstimate}
               onDelete={onDeleteItem}
-              onAddToList={onAddToList}
+              onTogglePriority={onTogglePriority}
+              onToggleLock={onToggleLock}
               onOpenDetail={onOpenDetail}
             />
           ))
@@ -734,11 +788,13 @@ function BucketSection({
 function BacklogTile({
   item,
   dimmed,
+  rank,
   onRename,
   onToggleType,
   onSetEstimate,
   onDelete,
-  onAddToList,
+  onTogglePriority,
+  onToggleLock,
   onOpenDetail,
 }) {
   const { setNodeRef, listeners, attributes } = useDraggable({ id: `b-${item.id}` })
@@ -788,10 +844,15 @@ function BacklogTile({
         (dimmed ? ' opacity-30' : '')
       }
     >
+      <RankCircle
+        prioritized={item.prioritized}
+        rank={rank}
+        onClick={() => onTogglePriority(item.id)}
+      />
       <button
         type="button"
         aria-label="Drag"
-        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
+        className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-300 active:cursor-grabbing"
         {...listeners}
         {...attributes}
       >
@@ -851,14 +912,17 @@ function BacklogTile({
               {item.name}
             </button>
             <div className="mt-0.5 flex items-center gap-3">
-              {!item.prioritized ? (
-                <button
-                  onClick={() => onAddToList(item.id)}
-                  className="whitespace-nowrap text-[11px] text-blue-500 transition hover:text-blue-600"
-                >
-                  Add to list
-                </button>
-              ) : null}
+              <button
+                onClick={() => onToggleLock(item.id)}
+                className={
+                  'whitespace-nowrap text-[11px] transition ' +
+                  (item.locked
+                    ? 'text-blue-500 hover:text-blue-600'
+                    : 'text-neutral-400 hover:text-blue-500')
+                }
+              >
+                {item.locked ? '🔒 Locked' : 'Lock'}
+              </button>
               <button
                 onClick={() => onOpenDetail(item)}
                 className="whitespace-nowrap text-[11px] text-neutral-400 transition hover:text-blue-500"
@@ -905,10 +969,10 @@ function BacklogTile({
   )
 }
 
-// RIGHT tile: sortable. Shows its category; × removes it from the queue.
-// Once completed today it turns green with a checkmark and is no longer
-// draggable, but × still works if you want to drop it from tomorrow's queue.
-function PriorityTile({ item, bucketName, onRemove }) {
+// RIGHT tile: shows rank + category. ▲/▼ nudge it within its lock tier; the
+// lock pins it to the top; × removes it (disabled while locked). Once
+// completed today it turns green with a checkmark.
+function PriorityTile({ item, rank, bucketName, canUp, canDown, onMove, onToggleLock, onRemove }) {
   const { setNodeRef, listeners, attributes, transform, transition, isDragging } =
     useSortable({ id: `p-${item.id}`, disabled: item.done })
   const style = {
@@ -921,26 +985,50 @@ function PriorityTile({ item, bucketName, onRemove }) {
       ref={setNodeRef}
       style={style}
       className={
-        'flex items-center rounded-xl px-2 py-2.5 shadow-sm ' +
-        (item.done ? 'bg-green-200' : 'bg-white') +
+        'flex items-center rounded-xl px-2 py-2 shadow-sm ' +
+        (item.done ? 'bg-green-200' : item.locked ? 'bg-blue-50' : 'bg-white') +
         (isDragging ? ' shadow-md' : '')
       }
     >
+      {/* Rank + drag handle */}
       {item.done ? (
-        <span className="mr-1.5 shrink-0 px-1 text-green-700" aria-hidden="true">
+        <span className="mr-1 shrink-0 px-1 text-green-700" aria-hidden="true">
           <CheckGlyph />
         </span>
       ) : (
         <button
           type="button"
           aria-label="Drag to reorder"
-          className="mr-1.5 shrink-0 cursor-grab touch-none px-1 text-neutral-400 active:cursor-grabbing"
+          className="mr-1 flex h-6 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-full text-[11px] font-medium tabular-nums text-neutral-500 active:cursor-grabbing"
           {...listeners}
           {...attributes}
         >
-          <GripGlyph />
+          {rank}
         </button>
       )}
+
+      {/* ▲/▼ nudge */}
+      {!item.done ? (
+        <div className="mr-1.5 flex shrink-0 flex-col">
+          <button
+            onClick={() => onMove(-1)}
+            disabled={!canUp}
+            aria-label="Move up"
+            className="leading-none text-neutral-300 transition hover:text-neutral-600 disabled:opacity-20"
+          >
+            <CaretGlyph up />
+          </button>
+          <button
+            onClick={() => onMove(1)}
+            disabled={!canDown}
+            aria-label="Move down"
+            className="leading-none text-neutral-300 transition hover:text-neutral-600 disabled:opacity-20"
+          >
+            <CaretGlyph />
+          </button>
+        </div>
+      ) : null}
+
       <div className="min-w-0 flex-1">
         <div
           className={
@@ -960,6 +1048,7 @@ function PriorityTile({ item, bucketName, onRemove }) {
           {bucketName}
         </div>
       </div>
+
       {item.time_estimate ? (
         <span
           className={
@@ -970,10 +1059,22 @@ function PriorityTile({ item, bucketName, onRemove }) {
           {formatDuration(item.time_estimate)}
         </span>
       ) : null}
+
+      {!item.done ? (
+        <button
+          onClick={onToggleLock}
+          aria-label={item.locked ? 'Unlock' : 'Lock to top'}
+          className="ml-2 shrink-0 text-[13px] leading-none transition"
+        >
+          {item.locked ? '🔒' : <LockOpenGlyph />}
+        </button>
+      ) : null}
+
       <button
         onClick={onRemove}
+        disabled={item.locked}
         aria-label="Remove from priority"
-        className="ml-2 shrink-0 text-lg leading-none text-neutral-300 transition hover:text-red-400"
+        className="ml-2 shrink-0 text-lg leading-none text-neutral-300 transition hover:text-red-400 disabled:opacity-20 disabled:hover:text-neutral-300"
       >
         ×
       </button>
@@ -1012,6 +1113,50 @@ function MiniType({ active, onClick, children }) {
     >
       {children}
     </button>
+  )
+}
+
+// Click-to-number control on backlog tiles: empty "+" when not queued, a
+// filled green circle with the rank number once queued.
+function RankCircle({ prioritized, rank, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={prioritized ? 'Remove from priority' : 'Add to priority'}
+      className={
+        'mr-2 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium tabular-nums transition ' +
+        (prioritized
+          ? 'border-green-500 bg-green-500 text-white hover:bg-green-600'
+          : 'border-neutral-300 text-neutral-300 hover:border-blue-400 hover:text-blue-400')
+      }
+    >
+      {prioritized ? rank : '+'}
+    </button>
+  )
+}
+
+function CaretGlyph({ up }) {
+  return (
+    <svg
+      width="12"
+      height="9"
+      viewBox="0 0 12 9"
+      fill="none"
+      aria-hidden="true"
+      className={up ? '' : 'rotate-180'}
+    >
+      <path d="M2 6.5L6 2.5l4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function LockOpenGlyph() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="text-neutral-300 transition hover:text-blue-400">
+      <rect x="3.5" y="7.5" width="9" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M5.5 7.5V5a2.5 2.5 0 0 1 4.9-.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
   )
 }
 

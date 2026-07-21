@@ -19,6 +19,7 @@ create table if not exists items (
                           check (status in ('active', 'done_today', 'deleted')),
   position    integer     not null default 0,
   prioritized boolean     not null default false,
+  locked      boolean     not null default false, -- pinned to the top of the queue
   bucket_id   bigint      references buckets (id) on delete set null,
   completed_at timestamptz,
   skipped_at  timestamptz,

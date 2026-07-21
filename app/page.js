@@ -41,7 +41,9 @@ export default function Home() {
   // first) so you always cycle back to them.
   const queue = useMemo(() => {
     if (!items) return []
-    const pri = items.filter((i) => i.prioritized && !i.done)
+    const pri = items
+      .filter((i) => i.prioritized && !i.done)
+      .sort((a, b) => (b.locked ? 1 : 0) - (a.locked ? 1 : 0) || a.position - b.position)
     const active = pri.filter((i) => !i.skipped)
     const skipped = pri
       .filter((i) => i.skipped)
