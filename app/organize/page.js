@@ -26,6 +26,8 @@ import {
   elapsedSeconds,
   parseStartTime,
   formatStartTime,
+  centralStartInstant,
+  formatCentralClock,
 } from '@/lib/time'
 
 const PRIORITY = 'priority'
@@ -109,6 +111,18 @@ export default function OrganizePage() {
 
   const totalPlanned = priorityItems.reduce((s, i) => s + (i.time_estimate || 0), 0)
   const totalSpent = priorityItems.reduce((s, i) => s + elapsedSeconds(i, nowMs), 0)
+
+  // Projected finish clock (Central), same model as Home: start + total plan
+  // duration (actual for done tasks, max(estimate, elapsed) for the rest).
+  const planTotal = priorityItems.reduce((sum, i) => {
+    if (i.done) return sum + (i.time_spent || 0)
+    return sum + Math.max(i.time_estimate || 0, elapsedSeconds(i, nowMs))
+  }, 0)
+  const startInstant = startTime ? centralStartInstant(startTime, new Date(nowMs)) : null
+  const finishLabel =
+    startInstant && planTotal > 0
+      ? formatCentralClock(new Date(startInstant.getTime() + planTotal * 1000))
+      : null
 
   // Left column: every active item, grouped by category (nothing is removed
   // when prioritized — those tiles just turn green).
@@ -391,7 +405,7 @@ export default function OrganizePage() {
       </nav>
 
       <div className="mx-auto w-full max-w-5xl px-5 pb-24 pt-2">
-        <div className="mb-4 flex items-center gap-2 px-1 text-xs text-neutral-400">
+        <div className="mb-4 flex flex-wrap items-center gap-2 px-1 text-xs text-neutral-400">
           <span className="uppercase tracking-widest">Day starts at</span>
           <input
             value={startDraft}
@@ -403,6 +417,11 @@ export default function OrganizePage() {
             placeholder="9:00 AM"
             className="w-24 rounded-full bg-neutral-100 px-3 py-1 text-center text-neutral-700 outline-none placeholder:text-neutral-400"
           />
+          {finishLabel ? (
+            <span className="tabular-nums">
+              → finish <span className="font-medium text-neutral-600">{finishLabel}</span>
+            </span>
+          ) : null}
         </div>
 
         {items === null ? null : (
