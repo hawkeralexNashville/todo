@@ -56,6 +56,7 @@ export default function Home() {
   // Flow mode: off until you manually Start once, then each new item's timer
   // auto-starts on advance; pressing Pause turns it back off. Resets on reload.
   const [autoStart, setAutoStart] = useState(false)
+  const [pending, setPending] = useState(null) // 'done' | 'skip' | null — for the spinner
 
   // Estimated time still needed to finish everything queued: for each not-done
   // prioritized item, estimate minus time already spent (never below zero).
@@ -126,33 +127,32 @@ export default function Home() {
       update()
       setExiting(false)
       setBusy(false)
+      setPending(null)
       setShowDetail(false) // next item starts collapsed
     }, 220)
   }
 
-  async function markDone() {
+  // Both Done and Skip advance optimistically: we disable the button + show a
+  // spinner instantly, move to the next item right away, and fire the save in
+  // the background (a reload resyncs if it ever fails). No waiting on the
+  // round-trip, and no chance of a double-click registering.
+  function markDone() {
     if (!current || busy) return
     const id = current.id
-    try {
-      await fetch(`/api/items/${id}/done`, { method: 'POST' })
-    } catch {
-      // Advance anyway; a reload will resync.
-    }
+    setPending('done')
     setSummary((s) => (s ? { ...s, completed: s.completed + 1 } : s))
+    fetch(`/api/items/${id}/done`, { method: 'POST' }).catch(() => {})
     fadeThen(() =>
       setItems((prev) => (prev ? prev.filter((i) => i.id !== id) : prev)),
     )
   }
 
-  async function skip() {
+  function skip() {
     if (!current || busy) return
     const id = current.id
     const now = new Date().toISOString()
-    try {
-      await fetch(`/api/items/${id}/skip`, { method: 'POST' })
-    } catch {
-      // Advance anyway; a reload will resync.
-    }
+    setPending('skip')
+    fetch(`/api/items/${id}/skip`, { method: 'POST' }).catch(() => {})
     fadeThen(() =>
       setItems((prev) =>
         prev
@@ -263,16 +263,16 @@ export default function Home() {
               <button
                 onClick={skip}
                 disabled={busy}
-                className="rounded-full px-5 py-2.5 text-[15px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 active:bg-neutral-200 disabled:opacity-40"
+                className="flex items-center justify-center rounded-full px-5 py-2.5 text-[15px] text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600 active:bg-neutral-200 disabled:opacity-60"
               >
-                Skip
+                {pending === 'skip' ? <Spinner className="text-neutral-400" /> : 'Skip'}
               </button>
               <button
                 onClick={markDone}
                 disabled={busy}
-                className="rounded-full bg-blue-50 px-6 py-2.5 text-[15px] font-medium text-blue-600 transition hover:bg-blue-100 active:bg-blue-200 disabled:opacity-40"
+                className="flex min-w-[84px] items-center justify-center rounded-full bg-blue-50 px-6 py-2.5 text-[15px] font-medium text-blue-600 transition hover:bg-blue-100 active:bg-blue-200 disabled:opacity-100"
               >
-                Done
+                {pending === 'done' ? <Spinner className="text-blue-600" /> : 'Done'}
               </button>
             </div>
           </div>
@@ -342,6 +342,21 @@ export default function Home() {
         ) : null}
       </Modal>
     </main>
+  )
+}
+
+function Spinner({ className = 'text-blue-600' }) {
+  return (
+    <svg
+      className={'h-[18px] w-[18px] animate-spin ' + className}
+      viewBox="0 0 24 24"
+      fill="none"
+      role="status"
+      aria-label="Saving"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
   )
 }
 
