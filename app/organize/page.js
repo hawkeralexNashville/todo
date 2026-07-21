@@ -158,23 +158,6 @@ export default function OrganizePage() {
     return -1
   }
 
-  // After a drag reorder, force locked items back to the slots they held
-  // before the drag, letting unlocked items flow around them. Keeps a drag
-  // from ever displacing a pinned item. (Same length in/out.)
-  function repairLocks(proposedIds) {
-    const result = new Array(proposedIds.length).fill(null)
-    for (const lid of lockedIds) {
-      const idx = orderedIds.indexOf(lid)
-      if (idx >= 0 && idx < result.length) result[idx] = lid
-    }
-    const nonLocked = proposedIds.filter((x) => !lockedIds.includes(x))
-    let k = 0
-    for (let i = 0; i < result.length; i++) {
-      if (result[i] === null) result[i] = nonLocked[k++]
-    }
-    return result
-  }
-
   function onDragEnd(event) {
     setActiveDragId(null)
     const { active, over } = event
@@ -198,10 +181,13 @@ export default function OrganizePage() {
           let to = priorityIndexOf(overId)
           if (to < 0) to = orderedIds.length - 1
           if (from >= 0 && to >= 0 && from !== to)
-            applyOrder(repairLocks(arrayMove(orderedIds, from, to)), lockedIds)
+            applyOrder(arrayMove(orderedIds, from, to), lockedIds)
         } else if (!item.locked) {
-          // Pull into the queue — append (locked items keep their slots).
-          applyOrder([...orderedIds, id], lockedIds)
+          // Pull into the queue at the drop position; items below shift down.
+          let at = priorityIndexOf(overId)
+          if (at < 0) at = orderedIds.length
+          const next = [...orderedIds.slice(0, at), id, ...orderedIds.slice(at)]
+          applyOrder(next, lockedIds)
         }
       } else if (overId === UNCATEGORIZED) {
         if ((item.bucket_id ?? null) !== null) patchItem(id, { bucket_id: null })
@@ -210,13 +196,13 @@ export default function OrganizePage() {
         if ((item.bucket_id ?? null) !== bucketId) patchItem(id, { bucket_id: bucketId })
       }
     } else if (activeStr.startsWith('p-')) {
-      // Dragging a right (priority) tile — reorder only.
+      // Dragging a right (priority) tile — reorder (locked tiles can't be dragged).
       if (overIsPriority && !item.locked) {
         const from = orderedIds.indexOf(id)
         let to = priorityIndexOf(overId)
         if (to < 0) to = orderedIds.length - 1
         if (from >= 0 && to >= 0 && from !== to)
-          applyOrder(repairLocks(arrayMove(orderedIds, from, to)), lockedIds)
+          applyOrder(arrayMove(orderedIds, from, to), lockedIds)
       }
     }
   }
@@ -239,28 +225,31 @@ export default function OrganizePage() {
     }
   }
 
+  // Lock = freeze this item in place (queue it if needed). It keeps its exact
+  // spot; nothing is re-sorted. Unlock leaves it exactly where it is too.
   function toggleLock(id) {
     if (lockedIds.includes(id)) {
-      // Unlock: leave the item exactly where it is, just clear the flag.
       applyOrder(orderedIds, lockedIds.filter((x) => x !== id))
     } else {
-      // Lock: float it up to the bottom of the locked cluster so the pins keep
-      // their "first-locked = #1, second = #2" order, then freeze it there.
-      const without = orderedIds.filter((x) => x !== id)
-      const insertAt = without.filter((x) => lockedIds.includes(x)).length
-      const next = [...without.slice(0, insertAt), id, ...without.slice(insertAt)]
-      applyOrder(next, [...lockedIds, id])
+      const base = orderedIds.includes(id) ? orderedIds : [...orderedIds, id]
+      applyOrder(base, [...lockedIds, id])
     }
   }
 
-  // ▲/▼ nudge, only within the same lock tier.
+  function lockAll() {
+    applyOrder(orderedIds, orderedIds) // every queued item locked, order kept
+  }
+  function unlockAll() {
+    applyOrder(orderedIds, [])
+  }
+
+  // ▲/▼ nudge. Locked items can't nudge themselves, but an unlocked item can
+  // move past a locked one (which shifts to make room).
   function move(id, dir) {
+    if (lockedIds.includes(id)) return
     const i = orderedIds.indexOf(id)
     const j = i + dir
     if (i < 0 || j < 0 || j >= orderedIds.length) return
-    const a = itemsById.get(orderedIds[i])
-    const b = itemsById.get(orderedIds[j])
-    if (!!a.locked !== !!b.locked) return // can't cross the locked/unlocked boundary
     applyOrder(arrayMove(orderedIds, i, j), lockedIds)
   }
 
@@ -461,15 +450,25 @@ export default function OrganizePage() {
 
               {/* RIGHT: priority queue */}
               <div>
-                <div className="mb-3 flex items-baseline justify-between px-1">
+                <div className="mb-3 flex items-baseline justify-between gap-3 px-1">
                   <h2 className="text-xs uppercase tracking-widest text-neutral-400">
                     Priority
                   </h2>
-                  {totalPlanned > 0 ? (
-                    <span className="text-xs tabular-nums text-neutral-400">
-                      {formatDuration(totalSpent)} / {formatDuration(totalPlanned)}
-                    </span>
-                  ) : null}
+                  <div className="flex items-baseline gap-3">
+                    {priorityItems.length > 0 ? (
+                      <button
+                        onClick={priorityItems.every((i) => i.locked) ? unlockAll : lockAll}
+                        className="text-xs text-neutral-400 transition hover:text-blue-500"
+                      >
+                        {priorityItems.every((i) => i.locked) ? 'Unlock all' : 'Lock all'}
+                      </button>
+                    ) : null}
+                    {totalPlanned > 0 ? (
+                      <span className="text-xs tabular-nums text-neutral-400">
+                        {formatDuration(totalSpent)} / {formatDuration(totalPlanned)}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <PriorityDroppable>
                   <SortableContext
@@ -487,11 +486,8 @@ export default function OrganizePage() {
                           item={item}
                           rank={idx + 1}
                           bucketName={bucketNameById.get(item.bucket_id) || 'Uncategorized'}
-                          canUp={idx > 0 && !!priorityItems[idx - 1].locked === !!item.locked}
-                          canDown={
-                            idx < priorityItems.length - 1 &&
-                            !!priorityItems[idx + 1].locked === !!item.locked
-                          }
+                          canUp={idx > 0}
+                          canDown={idx < priorityItems.length - 1}
                           onMove={(dir) => move(item.id, dir)}
                           onToggleLock={() => toggleLock(item.id)}
                           onRemove={() => unprioritize(item.id)}
@@ -1025,8 +1021,8 @@ function PriorityTile({ item, rank, bucketName, canUp, canDown, onMove, onToggle
         </button>
       )}
 
-      {/* ▲/▼ nudge */}
-      {!item.done ? (
+      {/* ▲/▼ nudge — hidden for locked tiles (they can't nudge themselves) */}
+      {!item.done && !item.locked ? (
         <div className="mr-1.5 flex shrink-0 flex-col">
           <button
             onClick={() => onMove(-1)}
