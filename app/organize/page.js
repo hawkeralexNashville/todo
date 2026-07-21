@@ -112,16 +112,19 @@ export default function OrganizePage() {
   const totalPlanned = priorityItems.reduce((s, i) => s + (i.time_estimate || 0), 0)
   const totalSpent = priorityItems.reduce((s, i) => s + elapsedSeconds(i, nowMs), 0)
 
-  // Projected finish clock (Central), same model as Home: start + total plan
-  // duration (actual for done tasks, max(estimate, elapsed) for the rest).
-  const planTotal = priorityItems.reduce((sum, i) => {
-    if (i.done) return sum + (i.time_spent || 0)
-    return sum + Math.max(i.time_estimate || 0, elapsedSeconds(i, nowMs))
-  }, 0)
+  // Projected finish clock (Central), same realistic model as Home: continue
+  // from now (or the start time if it's still ahead) plus the work remaining.
+  const remainingWork = priorityItems.reduce(
+    (sum, i) =>
+      i.done ? sum : sum + Math.max(0, (i.time_estimate || 0) - elapsedSeconds(i, nowMs)),
+    0,
+  )
   const startInstant = startTime ? centralStartInstant(startTime, new Date(nowMs)) : null
+  const finishBase =
+    startInstant && startInstant.getTime() > nowMs ? startInstant.getTime() : nowMs
   const finishLabel =
-    startInstant && planTotal > 0
-      ? formatCentralClock(new Date(startInstant.getTime() + planTotal * 1000))
+    remainingWork > 0
+      ? formatCentralClock(new Date(finishBase + remainingWork * 1000))
       : null
 
   // Left column: every active item, grouped by category (nothing is removed
