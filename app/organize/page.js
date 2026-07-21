@@ -26,8 +26,8 @@ import {
   elapsedSeconds,
   parseStartTime,
   formatStartTime,
-  centralStartInstant,
-  formatCentralClock,
+  nextStartInstant,
+  formatCentralFinish,
 } from '@/lib/time'
 
 const PRIORITY = 'priority'
@@ -119,12 +119,16 @@ export default function OrganizePage() {
       i.done ? sum : sum + Math.max(0, (i.time_estimate || 0) - elapsedSeconds(i, nowMs)),
     0,
   )
-  const startInstant = startTime ? centralStartInstant(startTime, new Date(nowMs)) : null
-  const finishBase =
-    startInstant && startInstant.getTime() > nowMs ? startInstant.getTime() : nowMs
+  // Planning (nothing underway today) anchors to the next start time; once work
+  // has happened, the finish is realistic from now.
+  const hasProgress = priorityItems.some(
+    (i) => i.done || i.time_spent > 0 || i.timer_started_at,
+  )
+  const startInstant = startTime ? nextStartInstant(startTime, new Date(nowMs)) : null
+  const finishBase = !hasProgress && startInstant ? startInstant.getTime() : nowMs
   const finishLabel =
     remainingWork > 0
-      ? formatCentralClock(new Date(finishBase + remainingWork * 1000))
+      ? formatCentralFinish(new Date(finishBase + remainingWork * 1000), new Date(nowMs))
       : null
 
   // Left column: every active item, grouped by category (nothing is removed

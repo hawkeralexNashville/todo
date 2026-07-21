@@ -7,8 +7,8 @@ import {
   formatClock,
   remainingSeconds,
   elapsedSeconds,
-  centralStartInstant,
-  formatCentralClock,
+  nextStartInstant,
+  formatCentralFinish,
 } from '@/lib/time'
 
 export default function Home() {
@@ -331,16 +331,19 @@ export default function Home() {
         }
         if (timeLeft > 0) {
           parts.push(`${formatClock(timeLeft)} left`)
-          // Realistic finish: continue from now (or your start time if it's
-          // still ahead) plus the work remaining.
-          const startInstant = startTime
-            ? centralStartInstant(startTime, new Date(nowMs))
-            : null
-          const base =
-            startInstant && startInstant.getTime() > nowMs
-              ? startInstant.getTime()
-              : nowMs
-          parts.push(`finish ${formatCentralClock(new Date(base + timeLeft * 1000))}`)
+          // If work has already happened today (mid-session), the finish is
+          // realistic from now. If nothing's underway (fresh/after reset =
+          // planning), anchor to the next occurrence of the start time.
+          const hasProgress =
+            (summary?.completed || 0) > 0 ||
+            (items || []).some(
+              (i) => i.prioritized && (i.time_spent > 0 || i.timer_started_at),
+            )
+          const start = startTime ? nextStartInstant(startTime, new Date(nowMs)) : null
+          const base = !hasProgress && start ? start.getTime() : nowMs
+          parts.push(
+            `finish ${formatCentralFinish(new Date(base + timeLeft * 1000), new Date(nowMs))}`,
+          )
         }
         return parts.length ? (
           <p className="absolute inset-x-0 bottom-8 text-center text-xs tabular-nums text-neutral-300">
