@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import Modal from '@/components/Modal'
-import { formatClock, remainingSeconds } from '@/lib/time'
+import { formatClock, remainingSeconds, elapsedSeconds } from '@/lib/time'
 
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
@@ -53,6 +53,20 @@ export default function Home() {
 
   const current = queue.length > 0 ? queue[0] : null
   const timerRunning = !!(current && current.timer_started_at)
+
+  // Estimated time still needed to finish everything queued: for each not-done
+  // prioritized item, estimate minus time already spent (never below zero).
+  // Ticks down live while a timer runs; a task's remaining share drops off the
+  // moment it's marked done.
+  const timeLeft = useMemo(() => {
+    if (!items) return 0
+    return items
+      .filter((i) => i.prioritized && !i.done)
+      .reduce(
+        (sum, i) => sum + Math.max(0, (i.time_estimate || 0) - elapsedSeconds(i, nowMs)),
+        0,
+      )
+  }, [items, nowMs])
 
   // Tick once a second while the current item's timer is running.
   useEffect(() => {
@@ -270,11 +284,18 @@ export default function Home() {
         )}
       </div>
 
-      {summary && summary.total > 0 ? (
-        <p className="absolute inset-x-0 bottom-8 text-center text-xs text-neutral-300">
-          {summary.completed}/{summary.total} complete
-        </p>
-      ) : null}
+      {(() => {
+        const parts = []
+        if (summary && summary.total > 0) {
+          parts.push(`${summary.completed}/${summary.total} complete`)
+        }
+        if (timeLeft > 0) parts.push(`${formatClock(timeLeft)} left`)
+        return parts.length ? (
+          <p className="absolute inset-x-0 bottom-8 text-center text-xs tabular-nums text-neutral-300">
+            {parts.join('  ·  ')}
+          </p>
+        ) : null
+      })()}
 
       <Modal open={showDetail} onClose={() => setShowDetail(false)}>
         {current ? (
