@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Modal from '@/components/Modal'
 import { formatClock, remainingSeconds, elapsedSeconds } from '@/lib/time'
@@ -78,14 +78,31 @@ export default function Home() {
     return () => clearInterval(id)
   }, [])
 
-  // Flow mode: when a new item comes up and we're in flow, auto-start its timer.
-  const currentId = current?.id
+  // Flow mode: when the current item changes and we're in flow, auto-start its
+  // timer. Self-contained (doesn't lean on timerAction's closure), and a ref
+  // guards against re-firing for the same item.
+  const flowSeenId = useRef(null)
   useEffect(() => {
-    if (!autoStart || !current) return
+    if (!current) return
+    if (flowSeenId.current === current.id) return
+    flowSeenId.current = current.id
+    if (!autoStart) return
     if (!current.time_estimate || current.timer_started_at) return
-    timerAction('start')
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentId, autoStart])
+    const id = current.id
+    setItems((prev) =>
+      prev
+        ? prev.map((i) =>
+            i.id === id ? { ...i, timer_started_at: new Date().toISOString() } : i,
+          )
+        : prev,
+    )
+    setNowMs(Date.now())
+    fetch(`/api/items/${id}/timer`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'start' }),
+    }).catch(() => {})
+  }, [current, autoStart])
 
   // Patch the current item's timer fields locally + persist the action.
   async function timerAction(action) {
