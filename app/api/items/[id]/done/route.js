@@ -30,12 +30,23 @@ export async function POST(_req, { params }) {
     status: newStatus,
     completed_at: new Date().toISOString(),
   }
-  // Finalize a running timer so the last segment is captured in time_spent.
+
+  // Final time actually spent (including any still-running segment).
+  let finalSpent = item.time_spent || 0
   if (item.timer_started_at) {
     const startMs = new Date(item.timer_started_at).getTime()
-    const extra = Math.max(0, Math.floor((Date.now() - startMs) / 1000))
-    updates.time_spent = (item.time_spent || 0) + extra
+    finalSpent += Math.max(0, Math.floor((Date.now() - startMs) / 1000))
+    updates.time_spent = finalSpent
     updates.timer_started_at = null
+  }
+
+  // Self-tuning estimate: if the timer was actually used, set the estimate to
+  // how long it really took (rounded to the nearest minute) so future runs of
+  // an evergreen reflect reality — faster or slower. Untracked completions
+  // (no time spent) leave the existing estimate untouched.
+  const roundedMinutes = Math.round(finalSpent / 60)
+  if (roundedMinutes >= 1) {
+    updates.time_estimate = roundedMinutes * 60
   }
 
   const { error } = await supabase.from('items').update(updates).eq('id', id)
