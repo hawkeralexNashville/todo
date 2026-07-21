@@ -53,6 +53,9 @@ export default function Home() {
 
   const current = queue.length > 0 ? queue[0] : null
   const timerRunning = !!(current && current.timer_started_at)
+  // Flow mode: off until you manually Start once, then each new item's timer
+  // auto-starts on advance; pressing Pause turns it back off. Resets on reload.
+  const [autoStart, setAutoStart] = useState(false)
 
   // Estimated time still needed to finish everything queued: for each not-done
   // prioritized item, estimate minus time already spent (never below zero).
@@ -68,17 +71,27 @@ export default function Home() {
       )
   }, [items, nowMs])
 
-  // Tick once a second while the current item's timer is running.
+  // Tick every second so the countdown, time-left, and finish clock stay live.
   useEffect(() => {
-    if (!timerRunning) return
     const id = setInterval(() => setNowMs(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [timerRunning])
+  }, [])
+
+  // Flow mode: when a new item comes up and we're in flow, auto-start its timer.
+  const currentId = current?.id
+  useEffect(() => {
+    if (!autoStart || !current) return
+    if (!current.time_estimate || current.timer_started_at) return
+    timerAction('start')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId, autoStart])
 
   // Patch the current item's timer fields locally + persist the action.
   async function timerAction(action) {
     if (!current) return
     const id = current.id
+    if (action === 'start') setAutoStart(true)
+    if (action === 'pause') setAutoStart(false)
     setItems((prev) =>
       prev
         ? prev.map((i) => {
@@ -289,7 +302,18 @@ export default function Home() {
         if (summary && summary.total > 0) {
           parts.push(`${summary.completed}/${summary.total} complete`)
         }
-        if (timeLeft > 0) parts.push(`${formatClock(timeLeft)} left`)
+        if (timeLeft > 0) {
+          parts.push(`${formatClock(timeLeft)} left`)
+          // Projected finish (Central time) if you worked straight through from now.
+          const finish = new Date(nowMs + timeLeft * 1000)
+          const label = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'America/Chicago',
+            hour: 'numeric',
+            minute: '2-digit',
+            timeZoneName: 'short',
+          }).format(finish)
+          parts.push(`finish ${label}`)
+        }
         return parts.length ? (
           <p className="absolute inset-x-0 bottom-8 text-center text-xs tabular-nums text-neutral-300">
             {parts.join('  ·  ')}
