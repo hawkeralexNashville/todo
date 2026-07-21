@@ -3,7 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Modal from '@/components/Modal'
-import { formatClock, remainingSeconds, elapsedSeconds } from '@/lib/time'
+import {
+  formatClock,
+  remainingSeconds,
+  elapsedSeconds,
+  centralStartInstant,
+  formatCentralClock,
+} from '@/lib/time'
 
 export default function Home() {
   const [items, setItems] = useState(null) // null = loading; array in position order
@@ -13,20 +19,23 @@ export default function Home() {
   const [busy, setBusy] = useState(false)
   const [showDetail, setShowDetail] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [startTime, setStartTime] = useState(null) // "HH:MM" or null
 
   useEffect(() => {
     load()
   }, [])
 
   async function load() {
-    const [ri, rb, rs] = await Promise.all([
+    const [ri, rb, rs, rt] = await Promise.all([
       fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/items/summary', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/settings', { cache: 'no-store' }).then((r) => r.json()),
     ])
     setItems(ri.items || [])
     setBuckets(rb.buckets || [])
     setSummary(rs)
+    setStartTime(rt.start_time || null)
   }
 
   const bucketNameById = useMemo(() => {
@@ -70,6 +79,20 @@ export default function Home() {
         (sum, i) => sum + Math.max(0, (i.time_estimate || 0) - elapsedSeconds(i, nowMs)),
         0,
       )
+  }, [items, nowMs])
+
+  // Total plan duration for the start-anchored finish: each queued task
+  // contributes its actual time once done, or max(estimate, elapsed) while not
+  // (so working within the estimate doesn't move the finish, but overtime and
+  // beating an estimate both do).
+  const planTotal = useMemo(() => {
+    if (!items) return 0
+    return items
+      .filter((i) => i.prioritized)
+      .reduce((sum, i) => {
+        if (i.done) return sum + (i.time_spent || 0)
+        return sum + Math.max(i.time_estimate || 0, elapsedSeconds(i, nowMs))
+      }, 0)
   }, [items, nowMs])
 
   // Tick every second so the countdown, time-left, and finish clock stay live.
@@ -159,8 +182,29 @@ export default function Home() {
     setPending('done')
     setSummary((s) => (s ? { ...s, completed: s.completed + 1 } : s))
     fetch(`/api/items/${id}/done`, { method: 'POST' }).catch(() => {})
+    // Mark done in place (finalizing the timer) rather than removing it, so it
+    // still counts its actual time toward the start-anchored finish.
     fadeThen(() =>
-      setItems((prev) => (prev ? prev.filter((i) => i.id !== id) : prev)),
+      setItems((prev) =>
+        prev
+          ? prev.map((i) => {
+              if (i.id !== id) return i
+              const startMs = i.timer_started_at
+                ? new Date(i.timer_started_at).getTime()
+                : null
+              const extra = startMs
+                ? Math.max(0, Math.floor((Date.now() - startMs) / 1000))
+                : 0
+              return {
+                ...i,
+                done: true,
+                status: i.type === 'evergreen' ? 'done_today' : 'deleted',
+                time_spent: (i.time_spent || 0) + extra,
+                timer_started_at: null,
+              }
+            })
+          : prev,
+      ),
     )
   }
 
@@ -319,18 +363,19 @@ export default function Home() {
         if (summary && summary.total > 0) {
           parts.push(`${summary.completed}/${summary.total} complete`)
         }
-        if (timeLeft > 0) {
-          parts.push(`${formatClock(timeLeft)} left`)
-          // Projected finish (Central time) if you worked straight through from now.
-          const finish = new Date(nowMs + timeLeft * 1000)
-          const label = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/Chicago',
-            hour: 'numeric',
-            minute: '2-digit',
-            timeZoneName: 'short',
-          }).format(finish)
-          parts.push(`finish ${label}`)
+        if (timeLeft > 0) parts.push(`${formatClock(timeLeft)} left`)
+        // Projected finish clock (Central). Anchored to the start time if one is
+        // set (start + total plan duration); otherwise now + time-left.
+        const startInstant = startTime
+          ? centralStartInstant(startTime, new Date(nowMs))
+          : null
+        let finishDate = null
+        if (startInstant && planTotal > 0) {
+          finishDate = new Date(startInstant.getTime() + planTotal * 1000)
+        } else if (timeLeft > 0) {
+          finishDate = new Date(nowMs + timeLeft * 1000)
         }
+        if (finishDate) parts.push(`finish ${formatCentralClock(finishDate)}`)
         return parts.length ? (
           <p className="absolute inset-x-0 bottom-8 text-center text-xs tabular-nums text-neutral-300">
             {parts.join('  ·  ')}

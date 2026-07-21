@@ -20,7 +20,13 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import Modal from '@/components/Modal'
-import { parseEstimate, formatDuration, elapsedSeconds } from '@/lib/time'
+import {
+  parseEstimate,
+  formatDuration,
+  elapsedSeconds,
+  parseStartTime,
+  formatStartTime,
+} from '@/lib/time'
 
 const PRIORITY = 'priority'
 const UNCATEGORIZED = 'bucket-none'
@@ -34,6 +40,8 @@ export default function OrganizePage() {
   const [detailItem, setDetailItem] = useState(null)
   const [detailDraft, setDetailDraft] = useState('')
   const [nowMs, setNowMs] = useState(() => Date.now())
+  const [startTime, setStartTime] = useState(null) // "HH:MM" or null
+  const [startDraft, setStartDraft] = useState('')
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -44,12 +52,26 @@ export default function OrganizePage() {
   }, [])
 
   async function load() {
-    const [ri, rb] = await Promise.all([
+    const [ri, rb, rs] = await Promise.all([
       fetch('/api/items', { cache: 'no-store' }).then((r) => r.json()),
       fetch('/api/buckets', { cache: 'no-store' }).then((r) => r.json()),
+      fetch('/api/settings', { cache: 'no-store' }).then((r) => r.json()),
     ])
     setItems(ri.items || [])
     setBuckets(rb.buckets || [])
+    setStartTime(rs.start_time || null)
+    setStartDraft(rs.start_time ? formatStartTime(rs.start_time) : '')
+  }
+
+  function saveStartTime() {
+    const parsed = parseStartTime(startDraft)
+    setStartTime(parsed)
+    setStartDraft(parsed ? formatStartTime(parsed) : '')
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ start_time: parsed }),
+    }).catch(() => {})
   }
 
   const itemsById = useMemo(() => {
@@ -369,6 +391,20 @@ export default function OrganizePage() {
       </nav>
 
       <div className="mx-auto w-full max-w-5xl px-5 pb-24 pt-2">
+        <div className="mb-4 flex items-center gap-2 px-1 text-xs text-neutral-400">
+          <span className="uppercase tracking-widest">Day starts at</span>
+          <input
+            value={startDraft}
+            onChange={(e) => setStartDraft(e.target.value)}
+            onBlur={saveStartTime}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+            placeholder="9:00 AM"
+            className="w-24 rounded-full bg-neutral-100 px-3 py-1 text-center text-neutral-700 outline-none placeholder:text-neutral-400"
+          />
+        </div>
+
         {items === null ? null : (
           <DndContext
             sensors={sensors}
