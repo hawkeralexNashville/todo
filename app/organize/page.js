@@ -64,15 +64,13 @@ export default function OrganizePage() {
     return m
   }, [buckets])
 
-  // Right column: the queue Home follows, in order (locked items pinned first).
+  // Right column: the queue Home follows, ordered purely by position. Locked
+  // items are frozen in place, not force-sorted to the top.
   const priorityItems = useMemo(
     () =>
       (items || [])
         .filter((i) => i.prioritized)
-        .sort(
-          (a, b) =>
-            (b.locked ? 1 : 0) - (a.locked ? 1 : 0) || a.position - b.position,
-        ),
+        .sort((a, b) => a.position - b.position),
     [items],
   )
   const orderedIds = priorityItems.map((i) => i.id)
@@ -117,18 +115,14 @@ export default function OrganizePage() {
 
   // ---- persistence ---------------------------------------------------------
 
-  // Persist a new priority order + lock set. Always normalizes so locked items
-  // sit at the top (in their relative order), which is what enforces the
-  // "locked can't be bumped below unlocked" rule regardless of the raw input.
-  function applyOrder(rawIds, lockedList) {
+  // Persist a priority order + lock set exactly as given (position = index).
+  // The order is authoritative — callers arrange locked items where they want
+  // them; nothing is re-sorted here.
+  function applyOrder(orderedIds, lockedList) {
     const lockedSet = new Set(lockedList)
-    const normalized = [
-      ...rawIds.filter((id) => lockedSet.has(id)),
-      ...rawIds.filter((id) => !lockedSet.has(id)),
-    ]
     setItems((prev) =>
       prev.map((it) => {
-        const idx = normalized.indexOf(it.id)
+        const idx = orderedIds.indexOf(it.id)
         if (idx >= 0) {
           return { ...it, prioritized: true, position: idx, locked: lockedSet.has(it.id) }
         }
@@ -140,8 +134,8 @@ export default function OrganizePage() {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        ids: normalized,
-        locked: normalized.filter((id) => lockedSet.has(id)),
+        ids: orderedIds,
+        locked: orderedIds.filter((id) => lockedSet.has(id)),
       }),
     }).catch(() => {})
   }
@@ -162,6 +156,23 @@ export default function OrganizePage() {
     if (typeof overId === 'string' && overId.startsWith('p-'))
       return orderedIds.indexOf(Number(overId.slice(2)))
     return -1
+  }
+
+  // After a drag reorder, force locked items back to the slots they held
+  // before the drag, letting unlocked items flow around them. Keeps a drag
+  // from ever displacing a pinned item. (Same length in/out.)
+  function repairLocks(proposedIds) {
+    const result = new Array(proposedIds.length).fill(null)
+    for (const lid of lockedIds) {
+      const idx = orderedIds.indexOf(lid)
+      if (idx >= 0 && idx < result.length) result[idx] = lid
+    }
+    const nonLocked = proposedIds.filter((x) => !lockedIds.includes(x))
+    let k = 0
+    for (let i = 0; i < result.length; i++) {
+      if (result[i] === null) result[i] = nonLocked[k++]
+    }
+    return result
   }
 
   function onDragEnd(event) {
@@ -187,13 +198,10 @@ export default function OrganizePage() {
           let to = priorityIndexOf(overId)
           if (to < 0) to = orderedIds.length - 1
           if (from >= 0 && to >= 0 && from !== to)
-            applyOrder(arrayMove(orderedIds, from, to), lockedIds)
-        } else {
-          let at = priorityIndexOf(overId)
-          if (at < 0) at = orderedIds.length
-          const newIds = [...orderedIds]
-          newIds.splice(at, 0, id)
-          applyOrder(newIds, lockedIds)
+            applyOrder(repairLocks(arrayMove(orderedIds, from, to)), lockedIds)
+        } else if (!item.locked) {
+          // Pull into the queue — append (locked items keep their slots).
+          applyOrder([...orderedIds, id], lockedIds)
         }
       } else if (overId === UNCATEGORIZED) {
         if ((item.bucket_id ?? null) !== null) patchItem(id, { bucket_id: null })
@@ -203,12 +211,12 @@ export default function OrganizePage() {
       }
     } else if (activeStr.startsWith('p-')) {
       // Dragging a right (priority) tile — reorder only.
-      if (overIsPriority) {
+      if (overIsPriority && !item.locked) {
         const from = orderedIds.indexOf(id)
         let to = priorityIndexOf(overId)
         if (to < 0) to = orderedIds.length - 1
         if (from >= 0 && to >= 0 && from !== to)
-          applyOrder(arrayMove(orderedIds, from, to), lockedIds)
+          applyOrder(repairLocks(arrayMove(orderedIds, from, to)), lockedIds)
       }
     }
   }
@@ -220,18 +228,28 @@ export default function OrganizePage() {
     )
   }
 
-  // Click-to-number: append to the bottom of the queue (or remove if already in).
+  // Click-to-number: append to the bottom of the queue (or remove if already
+  // in). A locked item can't be removed this way — unlock it first.
   function togglePriority(id) {
-    if (orderedIds.includes(id)) unprioritize(id)
-    else applyOrder([...orderedIds, id], lockedIds)
+    if (orderedIds.includes(id)) {
+      if (lockedIds.includes(id)) return
+      unprioritize(id)
+    } else {
+      applyOrder([...orderedIds, id], lockedIds)
+    }
   }
 
   function toggleLock(id) {
     if (lockedIds.includes(id)) {
-      applyOrder(orderedIds, lockedIds.filter((x) => x !== id)) // unlock, stays queued
+      // Unlock: leave the item exactly where it is, just clear the flag.
+      applyOrder(orderedIds, lockedIds.filter((x) => x !== id))
     } else {
-      const base = orderedIds.includes(id) ? orderedIds : [...orderedIds, id]
-      applyOrder(base, [...lockedIds, id]) // lock (and queue if needed)
+      // Lock: float it up to the bottom of the locked cluster so the pins keep
+      // their "first-locked = #1, second = #2" order, then freeze it there.
+      const without = orderedIds.filter((x) => x !== id)
+      const insertAt = without.filter((x) => lockedIds.includes(x)).length
+      const next = [...without.slice(0, insertAt), id, ...without.slice(insertAt)]
+      applyOrder(next, [...lockedIds, id])
     }
   }
 
@@ -974,7 +992,7 @@ function BacklogTile({
 // completed today it turns green with a checkmark.
 function PriorityTile({ item, rank, bucketName, canUp, canDown, onMove, onToggleLock, onRemove }) {
   const { setNodeRef, listeners, attributes, transform, transition, isDragging } =
-    useSortable({ id: `p-${item.id}`, disabled: item.done })
+    useSortable({ id: `p-${item.id}`, disabled: item.done || item.locked })
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,

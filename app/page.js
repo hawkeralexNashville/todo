@@ -43,7 +43,7 @@ export default function Home() {
     if (!items) return []
     const pri = items
       .filter((i) => i.prioritized && !i.done)
-      .sort((a, b) => (b.locked ? 1 : 0) - (a.locked ? 1 : 0) || a.position - b.position)
+      .sort((a, b) => a.position - b.position)
     const active = pri.filter((i) => !i.skipped)
     const skipped = pri
       .filter((i) => i.skipped)
