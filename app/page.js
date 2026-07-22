@@ -195,13 +195,22 @@ export default function Home() {
     <main className="relative min-h-dvh bg-canvas">
       {/* Unobtrusive top-corner controls */}
       <nav className="absolute inset-x-0 top-0 flex items-center justify-between px-5 py-4 text-neutral-300">
-        <Link
-          href="/organize"
-          aria-label="Organize and prioritize"
-          className="p-1 transition hover:text-neutral-500"
-        >
-          <OrganizeGlyph />
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link
+            href="/organize"
+            aria-label="Organize and prioritize"
+            className="p-1 transition hover:text-neutral-500"
+          >
+            <OrganizeGlyph />
+          </Link>
+          <Link
+            href="/break"
+            aria-label="Take a break"
+            className="p-1 transition hover:text-neutral-500"
+          >
+            <GameGlyph />
+          </Link>
+        </div>
         <Link
           href="/done"
           aria-label="Done items"
@@ -320,6 +329,12 @@ export default function Home() {
                 Organize
               </Link>
             </div>
+            <Link
+              href="/break"
+              className="mt-6 inline-block text-[13px] text-neutral-300 transition hover:text-blue-500"
+            >
+              Take a break →
+            </Link>
           </div>
         )}
       </div>
@@ -396,6 +411,18 @@ function OrganizeGlyph() {
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <rect x="4" y="4" width="12" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
       <rect x="4" y="11.5" width="12" height="4.5" rx="1.2" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  )
+}
+
+function GameGlyph() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="2.5" y="6.5" width="15" height="7.5" rx="3.4" stroke="currentColor" strokeWidth="1.3" />
+      <line x1="6" y1="8.8" x2="6" y2="11.6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="4.6" y1="10.2" x2="7.4" y2="10.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <circle cx="13" cy="9.6" r="1" fill="currentColor" />
+      <circle cx="14.8" cy="11.2" r="1" fill="currentColor" />
     </svg>
   )
 }
