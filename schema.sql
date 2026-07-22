@@ -38,10 +38,20 @@ create table if not exists app_meta (
   value text
 );
 
+-- Brain-break game scores (Breakout, Space Invaders).
+create table if not exists scores (
+  id         bigint generated always as identity primary key,
+  game       text        not null,
+  score      integer     not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists scores_game_score_idx on scores (game, score desc);
+
 -- This app talks to the database only from the server, using the service role
 -- key, which bypasses row level security. We still enable RLS with no policies
 -- so that the public anon key (if it were ever used from a browser) has no
 -- access at all.
 alter table items enable row level security;
 alter table buckets enable row level security;
+alter table scores enable row level security;
 alter table app_meta enable row level security;
