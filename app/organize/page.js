@@ -26,7 +26,7 @@ import {
   elapsedSeconds,
   parseStartTime,
   formatStartTime,
-  nextStartInstant,
+  centralStartInstant,
   formatCentralFinish,
 } from '@/lib/time'
 
@@ -124,7 +124,7 @@ export default function OrganizePage() {
   const hasProgress = priorityItems.some(
     (i) => i.done || i.time_spent > 0 || i.timer_started_at,
   )
-  const startInstant = startTime ? nextStartInstant(startTime, new Date(nowMs)) : null
+  const startInstant = startTime ? centralStartInstant(startTime, new Date(nowMs)) : null
   const finishBase = !hasProgress && startInstant ? startInstant.getTime() : nowMs
   const finishLabel =
     remainingWork > 0

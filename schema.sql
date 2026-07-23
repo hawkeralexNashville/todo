@@ -47,6 +47,13 @@ create table if not exists scores (
 );
 create index if not exists scores_game_score_idx on scores (game, score desc);
 
+-- Free-form daily journal. One entry per day (the app's 4 AM logical day).
+create table if not exists journal (
+  day        text primary key,           -- "YYYY-MM-DD"
+  content    text not null default '',
+  updated_at timestamptz not null default now()
+);
+
 -- This app talks to the database only from the server, using the service role
 -- key, which bypasses row level security. We still enable RLS with no policies
 -- so that the public anon key (if it were ever used from a browser) has no
@@ -54,4 +61,5 @@ create index if not exists scores_game_score_idx on scores (game, score desc);
 alter table items enable row level security;
 alter table buckets enable row level security;
 alter table scores enable row level security;
+alter table journal enable row level security;
 alter table app_meta enable row level security;

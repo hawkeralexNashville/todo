@@ -32,7 +32,12 @@ export default function BreakMenu() {
       </nav>
 
       <div className="mx-auto flex min-h-[70dvh] w-full max-w-sm flex-col items-center justify-center gap-4 px-6">
-        <p className="mb-2 text-xs uppercase tracking-widest text-neutral-300">
+        <GameCard
+          href="/journal"
+          title="Journal"
+          subtitle="Write about your day"
+        />
+        <p className="mt-2 w-full text-xs uppercase tracking-widest text-neutral-300">
           Take a break
         </p>
         <GameCard
@@ -68,7 +73,7 @@ function GameCard({ href, title, subtitle, best }) {
           <div className="tabular-nums text-neutral-500">{best}</div>
         </div>
       ) : (
-        <span className="text-blue-500">Play →</span>
+        <span className="text-blue-500">→</span>
       )}
     </Link>
   )

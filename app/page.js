@@ -7,7 +7,7 @@ import {
   formatClock,
   remainingSeconds,
   elapsedSeconds,
-  nextStartInstant,
+  centralStartInstant,
   formatCentralFinish,
 } from '@/lib/time'
 
@@ -354,7 +354,7 @@ export default function Home() {
             (items || []).some(
               (i) => i.prioritized && (i.time_spent > 0 || i.timer_started_at),
             )
-          const start = startTime ? nextStartInstant(startTime, new Date(nowMs)) : null
+          const start = startTime ? centralStartInstant(startTime, new Date(nowMs)) : null
           const base = !hasProgress && start ? start.getTime() : nowMs
           parts.push(
             `finish ${formatCentralFinish(new Date(base + timeLeft * 1000), new Date(nowMs))}`,
